@@ -23,3 +23,12 @@ go.work.sum
 
 # env file
 .env
+
+# go binary
+gh-enterprise-reports
+
+# CSV files
+*.csv
+
+# MacOS
+.DS_Store
