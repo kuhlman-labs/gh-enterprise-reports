@@ -99,21 +99,14 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 				core := rateLimits.GetCore()
 				gql := rateLimits.GetGraphQL()
 				audit := rateLimits.GetAuditLog()
-				log.Info().
-					Int("Remaining", core.Remaining).
-					Int("Limit", core.Limit).
-					Time("Reset", core.Reset.Time).
-					Msg("REST API rate limits")
-				log.Info().
-					Int("Remaining", gql.Remaining).
-					Int("Limit", gql.Limit).
-					Time("Reset", gql.Reset.Time).
-					Msg("GraphQL API rate limits")
-				log.Info().
-					Int("Remaining", audit.Remaining).
-					Int("Limit", audit.Limit).
-					Time("Reset", audit.Reset.Time).
-					Msg("Audit Log API rate limits")
+				// Build a single formatted message that prints all limits evenly.
+				msg := fmt.Sprintf(
+					"Rate Limits | REST: %d/%d (Reset: %s) | GraphQL: %d/%d (Reset: %s) | Audit Log: %d/%d (Reset: %s)",
+					core.Remaining, core.Limit, core.Reset.Time.UTC().Format(time.RFC3339),
+					gql.Remaining, gql.Limit, gql.Reset.Time.UTC().Format(time.RFC3339),
+					audit.Remaining, audit.Limit, audit.Reset.Time.UTC().Format(time.RFC3339),
+				)
+				log.Info().Msg(msg)
 			}
 		}
 	}

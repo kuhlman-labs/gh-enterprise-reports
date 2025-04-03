@@ -317,7 +317,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 			semaphore <- struct{}{}        // acquire semaphore token
 			defer func() { <-semaphore }() // release token
 
-			log.Info().Str("User", u.Login).Msg("Processing user concurrently.")
+			log.Info().Str("User", u.Login).Msg("Processing user.")
 
 			email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
 			if err != nil {
