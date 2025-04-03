@@ -40,7 +40,7 @@ type enterpriseUsersQuery struct {
 // getEnterpriseUsers queries the GraphQL API and returns a slice of EnterpriseUser.
 // It paginates until all the nodes are retrieved.
 func getEnterpriseUsers(ctx context.Context, client *githubv4.Client, slug string) ([]EnterpriseUser, error) {
-	log.Info().Str("Enterprise", slug).Msg("Fetching enterprise cloud users...")
+	log.Info().Str("Enterprise", slug).Msg("Fetching enterprise cloud users.")
 
 	var allUsers []EnterpriseUser
 	var cursor *githubv4.String
@@ -70,7 +70,7 @@ func getEnterpriseUsers(ctx context.Context, client *githubv4.Client, slug strin
 		cursor = &query.Enterprise.Members.PageInfo.EndCursor
 	}
 
-	log.Info().Int("Users", len(allUsers)).Msg("Fetched enterprise cloud users successfully")
+	log.Info().Int("Users", len(allUsers)).Msg("Successfully fetched enterprise cloud users.")
 	return allUsers, nil
 }
 
@@ -86,7 +86,7 @@ func hasRecentEvents(ctx context.Context, client *github.Client, user string, si
 			log.Debug().Str("User", user).
 				Str("Event Type", *event.Type).
 				Time("Event Time", event.CreatedAt.Time).
-				Msg("Recent activity detected")
+				Msg("Detected recent activity.")
 			return true, nil
 		}
 	}
@@ -125,7 +125,7 @@ func hasRecentContributions(ctx context.Context, client *githubv4.Client, user s
 
 	// check for contributions
 	if total > 0 {
-		log.Debug().Str("User", user).Int("Total Contributions", total).Msg("Contributions detected")
+		log.Debug().Str("User", user).Int("Total Contributions", total).Msg("Detected contributions for user.")
 	}
 
 	return total > 0, nil
@@ -134,7 +134,7 @@ func hasRecentContributions(ctx context.Context, client *githubv4.Client, user s
 // IsDormantUser returns true if the user shows no recent events or contributions
 // since the specified time.
 func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time, recentLogin bool) (bool, error) {
-	log.Debug().Str("User", user).Msg("Checking dormant status...")
+	log.Debug().Str("User", user).Msg("Checking dormant status for user.")
 
 	// Check for recent REST events.
 	recentEvents, err := hasRecentEvents(ctx, restClient, user, since)
@@ -156,7 +156,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 
 // getUserLogins fetches all audit log events for user.login for the past 90 days.
 func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug string) (map[string]time.Time, error) {
-	log.Info().Str("Enterprise", enterpriseSlug).Msg("Fetching audit logs...")
+	log.Info().Str("Enterprise", enterpriseSlug).Msg("Fetching audit logs for enterprise.")
 
 	// Build query phrase for user.login events.
 	phrase := "action:user.login"
@@ -177,7 +177,7 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 		// Fetch audit logs with pagination.
 		auditLogs, resp, err := client.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
 		if err != nil {
-			log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs")
+			log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs.")
 			return nil, fmt.Errorf("failed to query audit logs: %w", err)
 		}
 
@@ -192,7 +192,7 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 
 	}
 
-	log.Info().Int("Log Count", len(allAuditLogs)).Msg("Fetched audit logs successfully")
+	log.Info().Int("Log Count", len(allAuditLogs)).Msg("Successfully fetched audit logs.")
 
 	loginMap := make(map[string]time.Time)
 	for _, logEntry := range allAuditLogs {
@@ -208,13 +208,13 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 		}
 	}
 
-	log.Info().Int("Unique User Logins", len(loginMap)).Msg("Mapped audit logs to user logins")
+	log.Info().Int("Unique User Logins", len(loginMap)).Msg("Successfully mapped audit logs to user logins.")
 	return loginMap, nil
 }
 
 // getUserEmail queries the enterprise GraphQL API for the user's email.
 func getUserEmail(ctx context.Context, client *githubv4.Client, slug string, user string) (string, error) {
-	log.Debug().Str("User", user).Msg("Fetching email...")
+	log.Debug().Str("User", user).Msg("Fetching email for user.")
 
 	var query struct {
 		Enterprise struct {
@@ -248,7 +248,7 @@ func getUserEmail(ctx context.Context, client *githubv4.Client, slug string, use
 		"login": githubv4.String(user),
 	}
 	if err := client.Query(ctx, &query, variables); err != nil {
-		log.Error().Str("Enterprise", slug).Str("User", user).Err(err).Msg("Failed to fetch email")
+		log.Error().Str("Enterprise", slug).Str("User", user).Err(err).Msg("Failed to fetch email for user.")
 		return "", fmt.Errorf("failed to query external identities: %w", err)
 	}
 
@@ -268,7 +268,7 @@ func getUserEmail(ctx context.Context, client *githubv4.Client, slug string, use
 
 // runUsersCSVReport creates a CSV report with columns: ID, Login, Name, Email, Last Login, Dormant?
 func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug string, filename string) error {
-	log.Info().Str("Filename", filename).Msg("Creating Users report...")
+	log.Info().Str("Filename", filename).Msg("Creating users report.")
 
 	// Open or create the CSV file.
 	f, err := os.Create(filename)
@@ -281,7 +281,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 	defer func() {
 		writer.Flush()
 		if err := writer.Error(); err != nil {
-			log.Error().Err(err).Msg("error flushing CSV writer")
+			log.Error().Err(err).Msg("Error flushing CSV writer.")
 		}
 	}()
 
@@ -296,13 +296,13 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 
 	userLogins, err := getUserLogins(ctx, restClient, enterpriseSlug)
 	if err != nil {
-		log.Warn().Err(err).Msg("Could not retrieve user login events")
+		log.Warn().Err(err).Msg("Could not retrieve user login events.")
 		userLogins = make(map[string]time.Time)
 	}
 
 	users, err := getEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Error fetching users")
+		log.Fatal().Err(err).Msg("Error fetching users.")
 	}
 
 	// Replace sequential processing with concurrent processing.
@@ -317,11 +317,11 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 			semaphore <- struct{}{}        // acquire semaphore token
 			defer func() { <-semaphore }() // release token
 
-			log.Info().Str("User", u.Login).Msg("Processing user concurrently...")
+			log.Info().Str("User", u.Login).Msg("Processing user concurrently.")
 
 			email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
 			if err != nil {
-				log.Warn().Str("User", u.Login).Err(err).Msg("Could not fetch email")
+				log.Warn().Str("User", u.Login).Err(err).Msg("Could not retrieve email for user.")
 				email = ""
 			}
 
@@ -337,7 +337,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 
 			dormant, err := isDormant(ctx, restClient, graphQLClient, u.Login, referenceTime, recentLogin)
 			if err != nil {
-				log.Warn().Str("User", u.Login).Err(err).Msg("Error determining dormant status")
+				log.Warn().Str("User", u.Login).Err(err).Msg("Error determining dormant status for user.")
 				dormant = false
 			}
 			dormantStr := "No"
@@ -366,6 +366,6 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		}
 	}
 
-	log.Info().Str("Filename", filename).Msg("Users report finished successfully")
+	log.Info().Str("Filename", filename).Msg("Users report completed successfully.")
 	return nil
 }
