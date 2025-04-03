@@ -161,30 +161,35 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 	phrase := "action:user.login"
 	opts := &github.GetAuditLogOptions{
 		Phrase: &phrase,
+		ListCursorOptions: github.ListCursorOptions{
+			After:   "",
+			PerPage: 100,
+		},
 	}
 
 	var allAuditLogs []*github.AuditEntry
 
-	auditLogs, resp, err := client.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
-	if err != nil {
-		if resp != nil && resp.StatusCode == 403 {
-			log.Warn().
-				Str("Enterprise", enterpriseSlug).
-				Msgf("Primary rate limit exceeded for Audit Log endpoint. Waiting until %s", resp.Rate.Reset.Time)
-			resetAt := resp.Rate.Reset.Time.Add(1 * time.Second)
-			<-time.After(time.Until(resetAt))
-			// Retry the request.
-			auditLogs, _, err = client.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
-			if err != nil {
-				log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs after retry")
-				return nil, fmt.Errorf("failed to query audit logs: %w", err)
-			}
-		} else {
+	for {
+		// Check rate limits before each request.
+		EnsureRateLimits(ctx, client)
+
+		// Fetch audit logs with pagination.
+		auditLogs, resp, err := client.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
+		if err != nil {
 			log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs")
 			return nil, fmt.Errorf("failed to query audit logs: %w", err)
 		}
+
+		allAuditLogs = append(allAuditLogs, auditLogs...)
+
+		if resp.After == "" {
+			break
+		}
+
+		// Update the cursor for the next page.
+		opts.ListCursorOptions.After = resp.After
+
 	}
-	allAuditLogs = append(allAuditLogs, auditLogs...)
 
 	log.Info().Int("Log Count", len(allAuditLogs)).Msg("Fetched audit logs successfully")
 
@@ -303,7 +308,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 	for _, u := range users {
 
 		// Check rate limits before processing each user.
-		EnsureRateLimits(ctx, restClient)
+		//EnsureRateLimits(ctx, restClient)
 
 		log.Info().Str("User", u.Login).Msg("Processing user...")
 

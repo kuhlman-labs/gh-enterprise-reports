@@ -2,6 +2,7 @@ package enterprisereports
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/go-github/v70/github"
@@ -10,10 +11,10 @@ import (
 )
 
 // RESTRateLimitThreshold is the minimum remaining calls before waiting.
-const RESTRateLimitThreshold = 10
+const RESTRateLimitThreshold = 100
 
 // AuditLogRateLimitThreshold is the minimum remaining calls before waiting.
-const AuditLogRateLimitThreshold = 10
+const AuditLogRateLimitThreshold = 100
 
 // GraphQLRateLimitThreshold is the minimum remaining points before waiting.
 const GraphQLRateLimitThreshold = 100
@@ -27,64 +28,48 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 	return rl, nil
 }
 
-// waitForRESTRateLimitReset waits until the REST rate limit resets.
-func waitForRESTRateLimitReset(ctx context.Context, reset *github.RateLimits) {
-	now := time.Now()
-	waitDuration := reset.GetCore().Reset.Time.Sub(now) + time.Second // add 1 second cushion
+// waitForLimitReset waits until the given limit resets.
+// It logs the wait duration formatted as minutes and seconds and the reset time in UTC.
+func waitForLimitReset(ctx context.Context, name string, remaining int, limit int, resetTime time.Time) {
+	now := time.Now().UTC()
+	waitDuration := resetTime.UTC().Sub(now) + time.Second // add 1 second cushion
 	if waitDuration > 0 {
+		minutes := int(waitDuration.Minutes())
+		seconds := int(waitDuration.Seconds()) % 60
 		log.Warn().
-			Int("Remaining", reset.GetCore().Remaining).
-			Dur("WaitDuration", waitDuration).
-			Msg("REST rate limit low, waiting until reset")
+			Str("API", name).
+			Int("Remaining", remaining).
+			Int("Limit", limit).
+			Str("WaitDuration", fmt.Sprintf("%dm %ds", minutes, seconds)).
+			Str("ResetTime (UTC)", resetTime.UTC().Format(time.RFC3339)).
+			Msgf("%s rate limit low, waiting until reset", name)
 		select {
 		case <-ctx.Done():
-			log.Info().Msg("Context done, stopping wait for REST rate limit reset")
+			log.Info().Msgf("Context done, stopping wait for %s rate limit reset", name)
 			return
 		case <-time.After(waitDuration):
-			log.Info().Msg("REST rate limit reset")
+			log.Info().Msgf("%s rate limit reset", name)
 			return
 		}
 	}
+}
+
+// waitForRESTRateLimitReset waits until the REST rate limit resets.
+func waitForRESTRateLimitReset(ctx context.Context, rl *github.RateLimits) {
+	core := rl.GetCore()
+	waitForLimitReset(ctx, "REST", core.Remaining, core.Limit, core.Reset.Time)
 }
 
 // waitForGraphQLRateLimitReset waits until the GraphQL rate limit resets.
-func waitForGraphQLRateLimitReset(ctx context.Context, reset *github.RateLimits) {
-	now := time.Now()
-	waitDuration := reset.GetGraphQL().Reset.Time.Sub(now) + time.Second // add 1 second cushion
-	if waitDuration > 0 {
-		log.Warn().
-			Int("Remaining", reset.GetGraphQL().Remaining).
-			Dur("WaitDuration", waitDuration).
-			Msg("GraphQL rate limit low, waiting until reset")
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("Context done, stopping wait for GraphQL rate limit reset")
-			return
-		case <-time.After(waitDuration):
-			log.Info().Msg("GraphQL rate limit reset")
-			return
-		}
-	}
+func waitForGraphQLRateLimitReset(ctx context.Context, rl *github.RateLimits) {
+	gql := rl.GetGraphQL()
+	waitForLimitReset(ctx, "GraphQL", gql.Remaining, gql.Limit, gql.Reset.Time)
 }
 
 // waitForAuditLogRateLimitReset waits until the Audit Log rate limit resets.
-func waitForAuditLogRateLimitReset(ctx context.Context, reset *github.RateLimits) {
-	now := time.Now()
-	waitDuration := reset.GetAuditLog().Reset.Time.Sub(now) + time.Second // add 1 second cushion
-	if waitDuration > 0 {
-		log.Warn().
-			Int("Remaining", reset.GetAuditLog().Remaining).
-			Dur("WaitDuration", waitDuration).
-			Msg("Audit rate limit low, waiting until reset")
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("Context done, stopping wait for Audit Log rate limit reset")
-			return
-		case <-time.After(waitDuration):
-			log.Info().Msg("Audit Log rate limit reset")
-			return
-		}
-	}
+func waitForAuditLogRateLimitReset(ctx context.Context, rl *github.RateLimits) {
+	audit := rl.GetAuditLog()
+	waitForLimitReset(ctx, "Audit Log", audit.Remaining, audit.Limit, audit.Reset.Time)
 }
 
 // EnsureRateLimits checks the REST, GraphQL, and Audit Log rate limits and waits if limits are low.
@@ -103,7 +88,8 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 		waitForGraphQLRateLimitReset(ctx, rl)
 	}
 
-	if rl.GetAuditLog().Remaining < RESTRateLimitThreshold {
+	// Use the dedicated threshold for Audit Log.
+	if rl.GetAuditLog().Remaining < AuditLogRateLimitThreshold {
 		waitForAuditLogRateLimitReset(ctx, rl)
 	}
 }
@@ -121,25 +107,28 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 			log.Info().Msg("Rate limit monitoring stopped")
 			return
 		case <-ticker.C:
-			// Check REST API rate limits.
+			// Check API rate limits.
 			rateLimits, err := checkRateLimit(ctx, restClient)
 			if err != nil {
 				log.Error().Err(err).Msg("Error fetching REST API rate limits")
 			} else {
+				core := rateLimits.GetCore()
+				gql := rateLimits.GetGraphQL()
+				audit := rateLimits.GetAuditLog()
 				log.Info().
-					Int("Remaining", rateLimits.GetCore().Remaining).
-					Int("Limit", rateLimits.GetCore().Limit).
-					Time("Reset", rateLimits.GetCore().Reset.Time).
+					Int("Remaining", core.Remaining).
+					Int("Limit", core.Limit).
+					Time("Reset", core.Reset.Time).
 					Msg("REST API rate limits")
 				log.Info().
-					Int("Remaining", rateLimits.GetGraphQL().Remaining).
-					Int("Limit", rateLimits.GetGraphQL().Limit).
-					Time("Reset", rateLimits.GetGraphQL().Reset.Time).
+					Int("Remaining", gql.Remaining).
+					Int("Limit", gql.Limit).
+					Time("Reset", gql.Reset.Time).
 					Msg("GraphQL API rate limits")
 				log.Info().
-					Int("Remaining", rateLimits.GetAuditLog().Remaining).
-					Int("Limit", rateLimits.GetAuditLog().Limit).
-					Time("Reset", rateLimits.GetAuditLog().Reset.Time).
+					Int("Remaining", audit.Remaining).
+					Int("Limit", audit.Limit).
+					Time("Reset", audit.Reset.Time).
 					Msg("Audit Log API rate limits")
 			}
 		}

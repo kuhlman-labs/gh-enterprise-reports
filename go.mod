@@ -4,8 +4,6 @@ go 1.24.0
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.14.0
-	github.com/gofri/go-github-pagination v1.0.1
-	github.com/gofri/go-github-ratelimit/v2 v2.0.2
 	github.com/google/go-github/v70 v70.0.0
 	github.com/rs/zerolog v1.34.0
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7

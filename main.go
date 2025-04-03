@@ -47,7 +47,7 @@ func main() {
 			enterprisereports.EnsureRateLimits(ctx, restClient)
 
 			// Start monitoring rate limits every minute asynchronously and log the results.
-			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 1*time.Minute)
+			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 5*time.Second)
 
 			// Measure the time taken to run reports.
 			startTime := time.Now()

@@ -13,10 +13,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/gofri/go-github-pagination/githubpagination"
-	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
-	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit/github_primary_ratelimit"
-	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit/github_secondary_ratelimit"
 	"github.com/google/go-github/v70/github"
 )
 
@@ -89,20 +85,8 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
 	switch conf.AuthMethod {
 	case "token":
-		rateLimiter := github_ratelimit.New(nil,
-			github_primary_ratelimit.WithLimitDetectedCallback(func(ctx *github_primary_ratelimit.CallbackContext) {
-				log.Info().Str("category", string(ctx.Category)).Time("resetTime", *ctx.ResetTime).Msg("Primary rate limit detected")
-			}),
-			github_secondary_ratelimit.WithLimitDetectedCallback(func(ctx *github_secondary_ratelimit.CallbackContext) {
-				log.Info().Time("resetTime", *ctx.ResetTime).Dur("totalSleepTime", *ctx.TotalSleepTime).Msg("Secondary rate limit detected")
-			}),
-		)
 
-		paginator := githubpagination.NewClient(rateLimiter,
-			githubpagination.WithPerPage(100), // default to 100 results per page
-		)
-
-		client := github.NewClient(paginator).WithAuthToken(conf.Token)
+		client := github.NewClient(nil).WithAuthToken(conf.Token)
 		return client, nil
 	case "app":
 		itr, err := ghinstallation.NewKeyFromFile(
