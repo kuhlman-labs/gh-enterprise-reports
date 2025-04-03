@@ -62,7 +62,7 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	rootCmd.Flags().BoolVar(&config.Collaborators, "collaborators", false, "Run Collaborators report")
 	rootCmd.Flags().BoolVar(&config.Users, "users", false, "Run Users report")
 
-	// New log-level flag.
+	//Log-level flag.
 	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "info", "Set log level (debug, info, warn, error, fatal, panic)")
 
 	// Authentication flags.

@@ -11,10 +11,10 @@ import (
 )
 
 // RESTRateLimitThreshold is the minimum remaining calls before waiting.
-const RESTRateLimitThreshold = 100
+const RESTRateLimitThreshold = 10
 
 // AuditLogRateLimitThreshold is the minimum remaining calls before waiting.
-const AuditLogRateLimitThreshold = 100
+const AuditLogRateLimitThreshold = 20
 
 // GraphQLRateLimitThreshold is the minimum remaining points before waiting.
 const GraphQLRateLimitThreshold = 100
@@ -78,7 +78,7 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	}
 }
 
-// MonitorRateLimits periodically checks the REST and GraphQL rate limits and logs the results.
+// MonitorRateLimits periodically checks and logs REST, GraphQL, and Audit Log API rate limits.
 func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, interval time.Duration) {
 	log.Info().Dur("Interval", interval).Msg("Starting rate limit monitoring...")
 
