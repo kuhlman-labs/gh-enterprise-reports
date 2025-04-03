@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"sync" // added for concurrency
 	"time"
 
 	"github.com/google/go-github/v70/github"
@@ -304,56 +305,64 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		log.Fatal().Err(err).Msg("Error fetching users")
 	}
 
-	// Process each user.
+	// Replace sequential processing with concurrent processing.
+	rowsCh := make(chan []string, len(users))
+	semaphore := make(chan struct{}, 10) // limit concurrent requests to 10
+	var wg sync.WaitGroup
+
 	for _, u := range users {
+		wg.Add(1)
+		go func(u EnterpriseUser) {
+			defer wg.Done()
+			semaphore <- struct{}{}        // acquire semaphore token
+			defer func() { <-semaphore }() // release token
 
-		// Check rate limits before processing each user.
-		//EnsureRateLimits(ctx, restClient)
+			log.Info().Str("User", u.Login).Msg("Processing user concurrently...")
 
-		log.Info().Str("User", u.Login).Msg("Processing user...")
+			email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
+			if err != nil {
+				log.Warn().Str("User", u.Login).Err(err).Msg("Could not fetch email")
+				email = ""
+			}
 
-		// Retrieve user's email using enterprise slug.
-		email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
-		if err != nil {
-			log.Warn().Str("User", u.Login).Err(err).Msg("Could not fetch email")
-			email = ""
-		}
+			lastLoginStr := "N/A"
+			if t, ok := userLogins[u.Login]; ok {
+				lastLoginStr = t.Format(time.RFC3339)
+			}
 
-		// Determine last login time from aggregated audit log data.
-		lastLoginStr := "N/A"
-		if t, ok := userLogins[u.Login]; ok {
-			lastLoginStr = t.Format(time.RFC3339)
-		}
+			recentLogin := false
+			if t, ok := userLogins[u.Login]; ok && t.After(referenceTime) {
+				recentLogin = true
+			}
 
-		recentLogin := false
-		// If user has a login within the timeframe, consider them not dormant.
-		if loginTime, ok := userLogins[u.Login]; ok && loginTime.After(referenceTime) {
-			recentLogin = true
-		}
+			dormant, err := isDormant(ctx, restClient, graphQLClient, u.Login, referenceTime, recentLogin)
+			if err != nil {
+				log.Warn().Str("User", u.Login).Err(err).Msg("Error determining dormant status")
+				dormant = false
+			}
+			dormantStr := "No"
+			if dormant {
+				dormantStr = "Yes"
+			}
 
-		// Use isDormant to check if the user is dormant based on events and contributions.
-		dormant, err := isDormant(ctx, restClient, graphQLClient, u.Login, referenceTime, recentLogin)
-		if err != nil {
-			log.Warn().Str("User", u.Login).Err(err).Msg("Error determining dormant status")
-			dormant = false
-		}
+			row := []string{
+				fmt.Sprintf("%v", u.ID),
+				u.Login,
+				u.Name,
+				email,
+				lastLoginStr,
+				dormantStr,
+			}
+			rowsCh <- row
+		}(u)
+	}
+	wg.Wait()
+	close(rowsCh)
 
-		dormantStr := "No"
-		if dormant {
-			dormantStr = "Yes"
-		}
-
-		row := []string{
-			fmt.Sprintf("%v", u.ID),
-			u.Login,
-			u.Name,
-			email,
-			lastLoginStr,
-			dormantStr,
-		}
-
+	// Write CSV rows sequentially.
+	for row := range rowsCh {
 		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write row for user %s: %w", u.Login, err)
+			return fmt.Errorf("failed to write row for user: %w", err)
 		}
 	}
 

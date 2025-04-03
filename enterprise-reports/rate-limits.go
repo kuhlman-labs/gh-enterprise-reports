@@ -54,24 +54,6 @@ func waitForLimitReset(ctx context.Context, name string, remaining int, limit in
 	}
 }
 
-// waitForRESTRateLimitReset waits until the REST rate limit resets.
-func waitForRESTRateLimitReset(ctx context.Context, rl *github.RateLimits) {
-	core := rl.GetCore()
-	waitForLimitReset(ctx, "REST", core.Remaining, core.Limit, core.Reset.Time)
-}
-
-// waitForGraphQLRateLimitReset waits until the GraphQL rate limit resets.
-func waitForGraphQLRateLimitReset(ctx context.Context, rl *github.RateLimits) {
-	gql := rl.GetGraphQL()
-	waitForLimitReset(ctx, "GraphQL", gql.Remaining, gql.Limit, gql.Reset.Time)
-}
-
-// waitForAuditLogRateLimitReset waits until the Audit Log rate limit resets.
-func waitForAuditLogRateLimitReset(ctx context.Context, rl *github.RateLimits) {
-	audit := rl.GetAuditLog()
-	waitForLimitReset(ctx, "Audit Log", audit.Remaining, audit.Limit, audit.Reset.Time)
-}
-
 // EnsureRateLimits checks the REST, GraphQL, and Audit Log rate limits and waits if limits are low.
 func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	rl, err := checkRateLimit(ctx, restClient)
@@ -80,17 +62,19 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 		return
 	}
 
-	if rl.GetCore().Remaining < RESTRateLimitThreshold {
-		waitForRESTRateLimitReset(ctx, rl)
+	core := rl.GetCore()
+	if core.Remaining < RESTRateLimitThreshold {
+		waitForLimitReset(ctx, "REST", core.Remaining, core.Limit, core.Reset.Time)
 	}
 
-	if rl.GetGraphQL().Remaining < GraphQLRateLimitThreshold {
-		waitForGraphQLRateLimitReset(ctx, rl)
+	gql := rl.GetGraphQL()
+	if gql.Remaining < GraphQLRateLimitThreshold {
+		waitForLimitReset(ctx, "GraphQL", gql.Remaining, gql.Limit, gql.Reset.Time)
 	}
 
-	// Use the dedicated threshold for Audit Log.
-	if rl.GetAuditLog().Remaining < AuditLogRateLimitThreshold {
-		waitForAuditLogRateLimitReset(ctx, rl)
+	audit := rl.GetAuditLog()
+	if audit.Remaining < AuditLogRateLimitThreshold {
+		waitForLimitReset(ctx, "Audit Log", audit.Remaining, audit.Limit, audit.Reset.Time)
 	}
 }
 
