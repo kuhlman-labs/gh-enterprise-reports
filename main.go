@@ -26,6 +26,14 @@ func main() {
 			return config.Validate()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
+			// Set global log level based on configuration.
+			level, err := zerolog.ParseLevel(config.LogLevel)
+			if err != nil {
+				log.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
+				level = zerolog.InfoLevel
+			}
+			zerolog.SetGlobalLevel(level)
+
 			// Create REST and GraphQL clients.
 			restClient, err := enterprisereports.NewRESTClient(ctx, config)
 			if err != nil {

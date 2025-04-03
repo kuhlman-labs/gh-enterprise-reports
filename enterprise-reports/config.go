@@ -29,6 +29,7 @@ type Config struct {
 	GithubAppPrivateKey     string
 	GithubAppInstallationID int64
 	EnterpriseSlug          string
+	LogLevel                string // new field: log level (default "info")
 }
 
 // Validate checks for required flags based on the chosen authentication method.
@@ -60,6 +61,9 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	rootCmd.Flags().BoolVar(&config.Teams, "teams", false, "Run Teams report")
 	rootCmd.Flags().BoolVar(&config.Collaborators, "collaborators", false, "Run Collaborators report")
 	rootCmd.Flags().BoolVar(&config.Users, "users", false, "Run Users report")
+
+	// New log-level flag.
+	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "info", "Set log level (debug, info, warn, error, fatal, panic)")
 
 	// Authentication flags.
 	rootCmd.Flags().StringVar(&config.AuthMethod, "auth-method", "token", "Authentication method: token or app")
