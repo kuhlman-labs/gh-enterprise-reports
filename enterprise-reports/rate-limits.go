@@ -26,12 +26,17 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 
 	// Retry logic for rate limit checks.
 	for i := 0; i < 3; i++ {
-		rl, _, err = client.RateLimit.Get(ctx)
-		if err == nil {
-			return rl, nil
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context canceled during rate limit check: %w", ctx.Err())
+		default:
+			rl, _, err = client.RateLimit.Get(ctx)
+			if err == nil {
+				return rl, nil
+			}
+			log.Warn().Err(err).Msgf("Retrying rate limit check (%d/3)", i+1)
+			time.Sleep(2 * time.Second)
 		}
-		log.Warn().Err(err).Msgf("Retrying rate limit check (%d/3)", i+1)
-		time.Sleep(2 * time.Second)
 	}
 	return nil, fmt.Errorf("failed to fetch rate limits after retries: %w", err)
 }
