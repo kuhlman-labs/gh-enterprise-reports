@@ -21,8 +21,10 @@ func main() {
 	}
 	// Create a multiwriter to log to both terminal and file.
 	writer := io.MultiWriter(os.Stderr, file)
-	// Initialize zerolog with console writer using the multiwriter.
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: writer, TimeFormat: time.UTC.String()})
+
+	// Initialize zerolog with console writer for terminal and full debug logs for the file.
+	log.Logger = zerolog.New(writer).With().Timestamp().Logger()
+	consoleLogger := log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	config := &enterprisereports.Config{}
 	ctx := context.Background()
@@ -35,13 +37,16 @@ func main() {
 			return config.Validate()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Set global log level based on configuration.
+			// Set global log level for console output based on configuration.
 			level, err := zerolog.ParseLevel(config.LogLevel)
 			if err != nil {
-				log.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
+				consoleLogger.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
 				level = zerolog.InfoLevel
 			}
 			zerolog.SetGlobalLevel(level)
+
+			// Use consoleLogger for terminal output while keeping full debug logs in the file.
+			log.Logger = consoleLogger
 
 			// Create REST and GraphQL clients.
 			restClient, err := enterprisereports.NewRESTClient(ctx, config)
