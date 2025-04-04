@@ -29,7 +29,7 @@ type Config struct {
 	GithubAppPrivateKey     string
 	GithubAppInstallationID int64
 	EnterpriseSlug          string
-	LogLevel                string // new field: log level (default "info")
+	LogLevel                string
 }
 
 // Validate checks for required flags based on the chosen authentication method.
@@ -87,9 +87,11 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 
 // NewRESTClient creates a new REST client configured based on the chosen authentication method.
 func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	switch conf.AuthMethod {
 	case "token":
-
 		client := github.NewClient(nil).WithAuthToken(conf.Token)
 		return client, nil
 	case "app":
@@ -105,12 +107,15 @@ func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
 		client := github.NewClient(&http.Client{Transport: itr})
 		return client, nil
 	default:
-		return nil, fmt.Errorf("unsupported auth-method %q", conf.AuthMethod)
+		return nil, fmt.Errorf("unsupported auth-method %q; please use 'token' or 'app'", conf.AuthMethod)
 	}
 }
 
 // NewGraphQLClient creates a new GraphQL client configured based on the chosen authentication method.
 func NewGraphQLClient(ctx context.Context, conf *Config) (*githubv4.Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	switch conf.AuthMethod {
 	case "token":
 		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: conf.Token})
@@ -131,43 +136,47 @@ func NewGraphQLClient(ctx context.Context, conf *Config) (*githubv4.Client, erro
 		client := githubv4.NewClient(httpClient)
 		return client, nil
 	default:
-		return nil, fmt.Errorf("unsupported auth-method %q", conf.AuthMethod)
+		return nil, fmt.Errorf("unsupported auth-method %q; please use 'token' or 'app'", conf.AuthMethod)
 	}
 }
 
 // RunReports executes the selected report logic.
 func RunReports(ctx context.Context, conf *Config, restClient *github.Client, graphQLClient *githubv4.Client) {
-	if conf.Organizations {
+	runReport := func(reportName string, reportFunc func()) {
 		start := time.Now()
-		log.Info().Msg("Running Organizations Report...")
-		// TODO: Add Organizations report logic here.
-		log.Info().Dur("Duration", time.Since(start)).Msg("Organizations Report completed")
+		log.Info().Msgf("Running %s Report...", reportName)
+		reportFunc()
+		log.Info().Dur("Duration", time.Since(start)).Msgf("%s Report completed", reportName)
+	}
+
+	if conf.Organizations {
+		runReport("Organizations", func() {
+			// TODO: Add Organizations report logic here.
+		})
 	}
 	if conf.Repositories {
-		start := time.Now()
-		log.Info().Msg("Running Repositories Report...")
-		// TODO: Add Repositories report logic here.
-		log.Info().Dur("Duration", time.Since(start)).Msg("Repositories Report completed")
+		runReport("Repositories", func() {
+			// TODO: Add Repositories report logic here.
+		})
 	}
 	if conf.Teams {
-		start := time.Now()
-		log.Info().Msg("Running Teams Report...")
-		// TODO: Add Teams report logic here.
-		log.Info().Dur("Duration", time.Since(start)).Msg("Teams Report completed")
+		runReport("Teams", func() {
+			// TODO: Add Teams report logic here.
+		})
 	}
 	if conf.Collaborators {
-		start := time.Now()
-		log.Info().Msg("Running Collaborators Report...")
-		// TODO: Add Collaborators report logic here.
-		log.Info().Dur("Duration", time.Since(start)).Msg("Collaborators Report completed")
+		runReport("Collaborators", func() {
+			// TODO: Add Collaborators report logic here.
+		})
 	}
 	if conf.Users {
-		log.Info().Msg("Running Users Report...")
-		currentTime := time.Now()
-		// Format the current time to create a unique file name
-		formattedTime := currentTime.Format("20060102150405")
-		// Create a file name using the enterprise slug and formatted time
-		fileName := fmt.Sprintf("%s_users_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-		runUsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName)
+		runReport("Users", func() {
+			currentTime := time.Now()
+			formattedTime := currentTime.Format("20060102150405")
+			fileName := fmt.Sprintf("%s_users_report_%s.csv", conf.EnterpriseSlug, formattedTime)
+			if err := runUsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+				log.Error().Err(err).Msg("Failed to run Users Report")
+			}
+		})
 	}
 }
