@@ -147,7 +147,12 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		start := time.Now()
 		log.Info().Msgf("Running %s Report...", reportName)
 		reportFunc()
-		log.Info().Dur("Duration", time.Since(start)).Msgf("%s Report completed", reportName)
+		duration := time.Since(start).Round(time.Second)
+		minutes := int(duration.Minutes())
+		seconds := int(duration.Seconds()) % 60
+		log.Info().Msg("========================================")
+		log.Info().Msgf("%s Report completed in %dm %ds", reportName, minutes, seconds)
+		log.Info().Msg("========================================")
 	}
 
 	if conf.Organizations {

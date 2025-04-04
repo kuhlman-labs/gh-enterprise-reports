@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	enterprisereports "github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports"
@@ -39,7 +39,7 @@ func main() {
 	// Handle OS signals for graceful shutdown.
 	go func() {
 		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, os.Kill)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
 		log.Info().Msg("Received shutdown signal, canceling context...")
 		cancel()
@@ -87,15 +87,8 @@ func main() {
 			// Start monitoring rate limits every 15 seconds asynchronously and log the results.
 			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 15*time.Second)
 
-			// Measure the time taken to run reports.
-			startTime := time.Now().UTC() // Ensure UTC
+			// Run the reports.
 			enterprisereports.RunReports(ctx, config, restClient, graphQLClient)
-			duration := time.Since(startTime).Round(time.Second)
-			minutes := int(duration.Minutes())
-			seconds := int(duration.Seconds()) % 60
-			log.Info().Msg("========================================")
-			log.Info().Str("Duration", fmt.Sprintf("%dm %ds", minutes, seconds)).Msg("Report completed")
-			log.Info().Msg("========================================")
 		},
 	}
 
