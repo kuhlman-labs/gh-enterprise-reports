@@ -5,7 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"sync" // added for concurrency
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v70/github"
@@ -297,7 +297,7 @@ func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient 
 	return "N/A", nil
 }
 
-// runUsersCSVReport creates a CSV report with columns: ID, Login, Name, Email, Last Login, Dormant?
+// runUsersReport creates a CSV report with columns: ID, Login, Name, Email, Last Login, Dormant?
 func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug string, filename string) error {
 	log.Info().Str("Filename", filename).Msg("Creating users report.")
 
@@ -333,10 +333,10 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 
 	users, err := getEnterpriseUsers(ctx, restClient, graphQLClient, enterpriseSlug)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Error fetching users.")
+		return fmt.Errorf("error fetching users: %w", err)
 	}
 
-	// Replace sequential processing with concurrent processing.
+	// Use a buffered channel to collect rows for CSV writing.
 	rowsCh := make(chan []string, len(users))
 	semaphore := make(chan struct{}, 10) // limit concurrent requests to 10
 	var wg sync.WaitGroup
@@ -348,12 +348,12 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 			semaphore <- struct{}{}        // acquire semaphore token
 			defer func() { <-semaphore }() // release token
 
-			log.Info().Str("User", u.Login).Msg("Processing user.")
+			log.Debug().Str("User", u.Login).Msg("Processing user.")
 
 			email, err := getUserEmail(ctx, restClient, graphQLClient, enterpriseSlug, u.Login)
 			if err != nil {
 				log.Warn().Str("User", u.Login).Err(err).Msg("Could not retrieve email for user.")
-				email = ""
+				email = "N/A"
 			}
 
 			lastLoginStr := "N/A"
@@ -394,8 +394,12 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 			rowsCh <- row
 		}(u)
 	}
-	wg.Wait()
-	close(rowsCh)
+
+	// Close rowsCh after all goroutines finish.
+	go func() {
+		wg.Wait()
+		close(rowsCh)
+	}()
 
 	// Write CSV rows sequentially.
 	for row := range rowsCh {
