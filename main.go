@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"time"
 
@@ -12,8 +13,15 @@ import (
 )
 
 func main() {
-	// Initialize zerolog with console writer for colored output.
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	// Open log file in append mode.
+	file, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to open log file")
+	}
+	// Create a multiwriter to log to both terminal and file.
+	writer := io.MultiWriter(os.Stderr, file)
+	// Initialize zerolog with console writer using the multiwriter.
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: writer, TimeFormat: time.RFC3339})
 
 	config := &enterprisereports.Config{}
 	ctx := context.Background()
