@@ -39,20 +39,23 @@ type enterpriseUsersQuery struct {
 
 // getEnterpriseUsers queries the GraphQL API and returns a slice of EnterpriseUser.
 // It paginates until all the nodes are retrieved.
-func getEnterpriseUsers(ctx context.Context, client *githubv4.Client, slug string) ([]EnterpriseUser, error) {
+func getEnterpriseUsers(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, slug string) ([]EnterpriseUser, error) {
 	log.Info().Str("Enterprise", slug).Msg("Fetching enterprise cloud users.")
 
 	var allUsers []EnterpriseUser
 	var cursor *githubv4.String
 
 	for {
+		// Ensure rate limits before GraphQL call.
+		EnsureRateLimits(ctx, restClient)
+
 		var query enterpriseUsersQuery
 		variables := map[string]interface{}{
 			"enterpriseSlug": githubv4.String(slug),
 			"cursor":         (*githubv4.String)(cursor), // nil for first request.
 		}
 
-		if err := client.Query(ctx, &query, variables); err != nil {
+		if err := graphQLClient.Query(ctx, &query, variables); err != nil {
 			return nil, fmt.Errorf("failed to fetch enterprise cloud users: %w", err)
 		}
 
@@ -82,6 +85,9 @@ func getEnterpriseUsers(ctx context.Context, client *githubv4.Client, slug strin
 
 // hasRecentEvents checks if the user has any Public events more recent than the provided time.
 func hasRecentEvents(ctx context.Context, client *github.Client, user string, since time.Time) (bool, error) {
+	// Ensure rate limits before REST call.
+	EnsureRateLimits(ctx, client)
+
 	events, _, err := client.Activity.ListEventsPerformedByUser(ctx, user, false, nil)
 	if err != nil {
 		return false, err
@@ -100,8 +106,11 @@ func hasRecentEvents(ctx context.Context, client *github.Client, user string, si
 }
 
 // hasRecentContributions checks if the user has any contributions since the provided time.
-func hasRecentContributions(ctx context.Context, client *githubv4.Client, user string, since time.Time) (bool, error) {
+func hasRecentContributions(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time) (bool, error) {
 	log.Debug().Str("User", user).Msgf("Checking recent contributions since %s", since)
+
+	// Ensure rate limits before GraphQL call.
+	EnsureRateLimits(ctx, restClient)
 
 	var query struct {
 		User struct {
@@ -119,7 +128,7 @@ func hasRecentContributions(ctx context.Context, client *githubv4.Client, user s
 		"since": githubv4.DateTime{Time: since},
 	}
 
-	if err := client.Query(ctx, &query, vars); err != nil {
+	if err := graphQLClient.Query(ctx, &query, vars); err != nil {
 		return false, err
 	}
 
@@ -149,7 +158,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	}
 
 	// Check for recent contributions.
-	recentContribs, err := hasRecentContributions(ctx, graphQLClient, user, since)
+	recentContribs, err := hasRecentContributions(ctx, restClient, graphQLClient, user, since)
 	if err != nil {
 		return false, fmt.Errorf("error checking recent contributions for user %s: %w", user, err)
 	}
@@ -185,7 +194,7 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 	var allAuditLogs []*github.AuditEntry
 
 	for {
-		// Check rate limits before each request.
+		// Ensure rate limits before REST call.
 		EnsureRateLimits(ctx, client)
 
 		// Fetch audit logs with pagination.
@@ -232,8 +241,11 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 }
 
 // getUserEmail queries the enterprise GraphQL API for the user's email.
-func getUserEmail(ctx context.Context, client *githubv4.Client, slug string, user string) (string, error) {
+func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, slug string, user string) (string, error) {
 	log.Debug().Str("User", user).Msg("Fetching email for user.")
+
+	// Ensure rate limits before GraphQL call.
+	EnsureRateLimits(ctx, restClient)
 
 	var query struct {
 		Enterprise struct {
@@ -266,7 +278,7 @@ func getUserEmail(ctx context.Context, client *githubv4.Client, slug string, use
 		"slug":  githubv4.String(slug),
 		"login": githubv4.String(user),
 	}
-	if err := client.Query(ctx, &query, variables); err != nil {
+	if err := graphQLClient.Query(ctx, &query, variables); err != nil {
 		log.Error().Str("Enterprise", slug).Str("User", user).Err(err).Msg("Failed to fetch email for user.")
 		return "", fmt.Errorf("failed to query external identities: %w", err)
 	}
@@ -319,7 +331,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		userLogins = make(map[string]time.Time)
 	}
 
-	users, err := getEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
+	users, err := getEnterpriseUsers(ctx, restClient, graphQLClient, enterpriseSlug)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error fetching users.")
 	}
@@ -338,7 +350,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 
 			log.Info().Str("User", u.Login).Msg("Processing user.")
 
-			email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
+			email, err := getUserEmail(ctx, restClient, graphQLClient, enterpriseSlug, u.Login)
 			if err != nil {
 				log.Warn().Str("User", u.Login).Err(err).Msg("Could not retrieve email for user.")
 				email = ""
