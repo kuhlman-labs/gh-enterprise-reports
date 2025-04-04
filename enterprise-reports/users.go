@@ -56,6 +56,12 @@ func getEnterpriseUsers(ctx context.Context, client *githubv4.Client, slug strin
 			return nil, fmt.Errorf("failed to fetch enterprise cloud users: %w", err)
 		}
 
+		// Log the number of users fetched in this page, and pagination info.
+		log.Debug().Int("PageUsers", len(query.Enterprise.Members.Nodes)).
+			Bool("HasNextPage", query.Enterprise.Members.PageInfo.HasNextPage).
+			Str("EndCursor", string(query.Enterprise.Members.PageInfo.EndCursor)).
+			Msg("Fetched a page of enterprise users.")
+
 		// Append current page of users.
 		for _, node := range query.Enterprise.Members.Nodes {
 			allUsers = append(allUsers, node.EnterpriseUserAccount)
@@ -151,6 +157,14 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	// If the user has neither recent events nor contributions, the user is dormant.
 	dormant := !(recentEvents || recentContribs || recentLogin)
 
+	// report final dormant check outcome.
+	log.Debug().Str("User", user).
+		Bool("RecentEvents", recentEvents).
+		Bool("RecentContribs", recentContribs).
+		Bool("RecentLogin", recentLogin).
+		Bool("Dormant", dormant).
+		Msg("Dormant check result.")
+
 	return dormant, nil
 }
 
@@ -180,6 +194,11 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 			log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs.")
 			return nil, fmt.Errorf("failed to query audit logs: %w", err)
 		}
+
+		// Log added after fetching a page of audit logs.
+		log.Debug().Int("PageAuditLogCount", len(auditLogs)).
+			Str("AfterCursor", resp.After).
+			Msg("Fetched a page of audit logs.")
 
 		allAuditLogs = append(allAuditLogs, auditLogs...)
 
@@ -344,6 +363,13 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 			if dormant {
 				dormantStr = "Yes"
 			}
+
+			// Log processed user details.
+			log.Debug().Str("User", u.Login).
+				Str("Email", email).
+				Str("LastLogin", lastLoginStr).
+				Bool("Dormant", dormant).
+				Msg("User processed.")
 
 			row := []string{
 				fmt.Sprintf("%v", u.ID),
