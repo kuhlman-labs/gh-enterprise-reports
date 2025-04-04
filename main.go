@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"time"
 
 	enterprisereports "github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports"
@@ -19,6 +20,9 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to open log file")
 	}
+	// Ensure the log file is closed properly.
+	defer file.Close()
+
 	// Create a multiwriter to log to both terminal and file.
 	writer := io.MultiWriter(os.Stderr, file)
 
@@ -27,7 +31,19 @@ func main() {
 	consoleLogger := log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	config := &enterprisereports.Config{}
-	ctx := context.Background()
+
+	// Add context cancellation for long-running operations.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle OS signals for graceful shutdown.
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, os.Kill)
+		<-sigChan
+		log.Info().Msg("Received shutdown signal, canceling context...")
+		cancel()
+	}()
 
 	// Define our root command with configuration validation.
 	rootCmd := &cobra.Command{

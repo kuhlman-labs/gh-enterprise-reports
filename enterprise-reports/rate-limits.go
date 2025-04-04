@@ -21,11 +21,19 @@ const GraphQLRateLimitThreshold = 100
 
 // checkRateLimit fetches the current rate limits for the client.
 func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLimits, error) {
-	rl, _, err := client.RateLimit.Get(ctx)
-	if err != nil {
-		return nil, err
+	var rl *github.RateLimits
+	var err error
+
+	// Retry logic for rate limit checks.
+	for i := 0; i < 3; i++ {
+		rl, _, err = client.RateLimit.Get(ctx)
+		if err == nil {
+			return rl, nil
+		}
+		log.Warn().Err(err).Msgf("Retrying rate limit check (%d/3)", i+1)
+		time.Sleep(2 * time.Second)
 	}
-	return rl, nil
+	return nil, fmt.Errorf("failed to fetch rate limits after retries: %w", err)
 }
 
 // waitForLimitReset waits until the given limit resets.

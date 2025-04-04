@@ -80,16 +80,17 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	viper.SetConfigName("config") // name of config file (without extension)
 	viper.AddConfigPath(".")      // look for config in the working directory
 	viper.AutomaticEnv()          // read in environment variables that match
-	if err := viper.ReadInConfig(); err == nil {
+
+	// Validate the configuration file.
+	if err := viper.ReadInConfig(); err != nil {
+		log.Warn().Err(err).Msg("Failed to read config file, proceeding with defaults and environment variables.")
+	} else {
 		log.Info().Str("Config File", viper.ConfigFileUsed()).Msg("Using config file")
 	}
 }
 
 // NewRESTClient creates a new REST client configured based on the chosen authentication method.
 func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	switch conf.AuthMethod {
 	case "token":
 		client := github.NewClient(nil).WithAuthToken(conf.Token)

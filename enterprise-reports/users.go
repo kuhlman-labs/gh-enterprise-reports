@@ -340,6 +340,8 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 	rowsCh := make(chan []string, len(users))
 	semaphore := make(chan struct{}, 10) // limit concurrent requests to 10
 	var wg sync.WaitGroup
+	var writeErr error
+	var writeErrMu sync.Mutex
 
 	for _, u := range users {
 		wg.Add(1)
@@ -391,7 +393,13 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 				lastLoginStr,
 				dormantStr,
 			}
-			rowsCh <- row
+			select {
+			case rowsCh <- row:
+			default:
+				writeErrMu.Lock()
+				writeErr = fmt.Errorf("failed to write row for user: %s", u.Login)
+				writeErrMu.Unlock()
+			}
 		}(u)
 	}
 
@@ -406,6 +414,11 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write row for user: %w", err)
 		}
+	}
+
+	// Check for errors during CSV writing.
+	if writeErr != nil {
+		return writeErr
 	}
 
 	log.Info().Str("Filename", filename).Msg("Users report completed successfully.")
