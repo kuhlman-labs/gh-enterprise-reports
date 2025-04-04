@@ -31,8 +31,8 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 // waitForLimitReset waits until the given limit resets.
 // It logs the wait duration formatted as minutes and seconds and the reset time in UTC.
 func waitForLimitReset(ctx context.Context, name string, remaining int, limit int, resetTime time.Time) {
-	now := time.Now().UTC()
-	waitDuration := resetTime.UTC().Sub(now) + time.Second // add 1 second cushion
+	now := time.Now().UTC()                                // Ensure UTC
+	waitDuration := resetTime.UTC().Sub(now) + time.Second // Ensure UTC
 	if waitDuration > 0 {
 		minutes := int(waitDuration.Minutes())
 		seconds := int(waitDuration.Seconds()) % 60
@@ -41,7 +41,7 @@ func waitForLimitReset(ctx context.Context, name string, remaining int, limit in
 			Int("Remaining", remaining).
 			Int("Limit", limit).
 			Str("WaitDuration", fmt.Sprintf("%dm %ds", minutes, seconds)).
-			Str("ResetTime (UTC)", resetTime.UTC().Format(time.RFC3339)).
+			Str("ResetTime (UTC)", resetTime.UTC().Format(time.RFC3339)). // Ensure UTC
 			Msgf("%s rate limit low, waiting until reset", name)
 		select {
 		case <-ctx.Done():

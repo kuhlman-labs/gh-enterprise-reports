@@ -220,7 +220,7 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 			continue
 		}
 		actor := *logEntry.Actor
-		eventTime := logEntry.CreatedAt.Time
+		eventTime := logEntry.CreatedAt.Time.UTC() // Ensure UTC
 		// Store the latest event per user.
 		if existing, found := loginMap[actor]; !found || eventTime.After(existing) {
 			loginMap[actor] = eventTime
@@ -311,7 +311,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 	}
 
 	// Define inactivity threshold (e.g., 90 days).
-	referenceTime := time.Now().AddDate(0, 0, -90)
+	referenceTime := time.Now().UTC().AddDate(0, 0, -90) // Ensure UTC
 
 	userLogins, err := getUserLogins(ctx, restClient, enterpriseSlug)
 	if err != nil {
@@ -346,7 +346,7 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 
 			lastLoginStr := "N/A"
 			if t, ok := userLogins[u.Login]; ok {
-				lastLoginStr = t.Format(time.RFC3339)
+				lastLoginStr = t.UTC().Format(time.RFC3339) // Ensure UTC
 			}
 
 			recentLogin := false

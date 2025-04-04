@@ -30,5 +30,8 @@ gh-enterprise-reports
 # CSV files
 *.csv
 
+# Log files
+*.log
+
 # MacOS
 .DS_Store

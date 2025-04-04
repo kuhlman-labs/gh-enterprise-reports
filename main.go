@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -21,7 +22,7 @@ func main() {
 	// Create a multiwriter to log to both terminal and file.
 	writer := io.MultiWriter(os.Stderr, file)
 	// Initialize zerolog with console writer using the multiwriter.
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: writer, TimeFormat: time.RFC3339})
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: writer, TimeFormat: time.UTC.String()})
 
 	config := &enterprisereports.Config{}
 	ctx := context.Background()
@@ -66,12 +67,13 @@ func main() {
 			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 15*time.Second)
 
 			// Measure the time taken to run reports.
-			startTime := time.Now()
+			startTime := time.Now().UTC() // Ensure UTC
 			enterprisereports.RunReports(ctx, config, restClient, graphQLClient)
-			duration := time.Since(startTime)
-			duration = duration.Round(time.Second)
+			duration := time.Since(startTime).Round(time.Second)
+			minutes := int(duration.Minutes())
+			seconds := int(duration.Seconds()) % 60
 			log.Info().Msg("========================================")
-			log.Info().Dur("Duration", duration).Msg("Report completed")
+			log.Info().Str("Duration", fmt.Sprintf("%dm %ds", minutes, seconds)).Msg("Report completed")
 			log.Info().Msg("========================================")
 		},
 	}
