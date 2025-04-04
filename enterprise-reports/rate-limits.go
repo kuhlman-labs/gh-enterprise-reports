@@ -31,23 +31,25 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 // waitForLimitReset waits until the given limit resets.
 // It logs the wait duration formatted as minutes and seconds and the reset time in UTC.
 func waitForLimitReset(ctx context.Context, name string, remaining int, limit int, resetTime time.Time) {
-	now := time.Now().UTC()                                // Ensure UTC
-	waitDuration := resetTime.UTC().Sub(now) + time.Second // Ensure UTC
+	now := time.Now().UTC() // Ensure UTC
+	waitDuration := resetTime.Sub(now) + time.Second
 	if waitDuration > 0 {
-		minutes := int(waitDuration.Minutes())
-		seconds := int(waitDuration.Seconds()) % 60
 		log.Warn().
 			Str("API", name).
 			Int("Remaining", remaining).
 			Int("Limit", limit).
-			Str("WaitDuration", fmt.Sprintf("%dm %ds", minutes, seconds)).
-			Str("ResetTime (UTC)", resetTime.UTC().Format(time.RFC3339)). // Ensure UTC
+			Str("WaitDuration", waitDuration.Truncate(time.Second).String()).
+			Str("ResetTime (UTC)", resetTime.Format(time.RFC3339)).
 			Msgf("%s rate limit low, waiting until reset", name)
+
+		timer := time.NewTimer(waitDuration)
+		defer timer.Stop()
+
 		select {
 		case <-ctx.Done():
-			log.Info().Msgf("Context done, stopping wait for %s rate limit reset", name)
+			log.Info().Msgf("Context canceled, stopping wait for %s rate limit reset", name)
 			return
-		case <-time.After(waitDuration):
+		case <-timer.C:
 			log.Info().Msgf("%s rate limit reset", name)
 			return
 		}
@@ -62,18 +64,15 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 		return
 	}
 
-	core := rl.GetCore()
-	if core.Remaining < RESTRateLimitThreshold {
+	if core := rl.GetCore(); core != nil && core.Remaining < RESTRateLimitThreshold {
 		waitForLimitReset(ctx, "REST", core.Remaining, core.Limit, core.Reset.Time)
 	}
 
-	gql := rl.GetGraphQL()
-	if gql.Remaining < GraphQLRateLimitThreshold {
+	if gql := rl.GetGraphQL(); gql != nil && gql.Remaining < GraphQLRateLimitThreshold {
 		waitForLimitReset(ctx, "GraphQL", gql.Remaining, gql.Limit, gql.Reset.Time)
 	}
 
-	audit := rl.GetAuditLog()
-	if audit.Remaining < AuditLogRateLimitThreshold {
+	if audit := rl.GetAuditLog(); audit != nil && audit.Remaining < AuditLogRateLimitThreshold {
 		waitForLimitReset(ctx, "Audit Log", audit.Remaining, audit.Limit, audit.Reset.Time)
 	}
 }
@@ -91,23 +90,45 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 			log.Info().Msg("Rate limit monitoring stopped")
 			return
 		case <-ticker.C:
-			// Check API rate limits.
 			rateLimits, err := checkRateLimit(ctx, restClient)
 			if err != nil {
 				log.Error().Err(err).Msg("Error fetching REST API rate limits")
-			} else {
-				core := rateLimits.GetCore()
-				gql := rateLimits.GetGraphQL()
-				audit := rateLimits.GetAuditLog()
-				// Build a single formatted message that prints all limits evenly.
-				msg := fmt.Sprintf(
-					"Rate Limits | REST: %d/%d (Reset: %s) | GraphQL: %d/%d (Reset: %s) | Audit Log: %d/%d (Reset: %s)",
-					core.Remaining, core.Limit, core.Reset.Time.UTC().Format(time.RFC3339),
-					gql.Remaining, gql.Limit, gql.Reset.Time.UTC().Format(time.RFC3339),
-					audit.Remaining, audit.Limit, audit.Reset.Time.UTC().Format(time.RFC3339),
-				)
-				log.Info().Msg(msg)
+				continue
 			}
+
+			core := rateLimits.GetCore()
+			gql := rateLimits.GetGraphQL()
+			audit := rateLimits.GetAuditLog()
+
+			msg := fmt.Sprintf(
+				"Rate Limits | REST: %d/%d (Reset: %s) | GraphQL: %d/%d (Reset: %s) | Audit Log: %d/%d (Reset: %s)",
+				getRemaining(core), getLimit(core), getResetTime(core),
+				getRemaining(gql), getLimit(gql), getResetTime(gql),
+				getRemaining(audit), getLimit(audit), getResetTime(audit),
+			)
+			log.Info().Msg(msg)
 		}
 	}
+}
+
+// Helper functions to safely access rate limit fields.
+func getRemaining(rl *github.Rate) int {
+	if rl == nil {
+		return 0
+	}
+	return rl.Remaining
+}
+
+func getLimit(rl *github.Rate) int {
+	if rl == nil {
+		return 0
+	}
+	return rl.Limit
+}
+
+func getResetTime(rl *github.Rate) string {
+	if rl == nil {
+		return "N/A"
+	}
+	return rl.Reset.Time.UTC().Format(time.RFC3339)
 }
