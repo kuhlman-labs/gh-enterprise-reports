@@ -43,8 +43,7 @@ type enterpriseUsersQuery struct {
 	}
 }
 
-// getEnterpriseUsers queries the GraphQL API and returns a slice of EnterpriseUser.
-// It paginates until all the nodes are retrieved.
+// getEnterpriseUsers retrieves all enterprise users via the GraphQL API with pagination support.
 func getEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, slug string) ([]EnterpriseUser, error) {
 	log.Info().Str("Enterprise", slug).Msg("Fetching enterprise cloud users.")
 
@@ -92,7 +91,7 @@ func getEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, slu
 	return allUsers, nil
 }
 
-// hasRecentEvents checks if the user has any Public events more recent than the provided time.
+// hasRecentEvents determines whether a user has any recent public events after the specified time.
 func hasRecentEvents(ctx context.Context, restClient *github.Client, user string, since time.Time) (bool, error) {
 
 	events, resp, err := restClient.Activity.ListEventsPerformedByUser(ctx, user, false, nil)
@@ -118,7 +117,7 @@ func hasRecentEvents(ctx context.Context, restClient *github.Client, user string
 	return false, nil
 }
 
-// hasRecentContributions checks if the user has any contributions since the provided time.
+// hasRecentContributions checks if a user has any contributions since the provided time.
 func hasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client, user string, since time.Time) (bool, error) {
 	log.Debug().Str("User", user).Msgf("Checking recent contributions since %s", since)
 
@@ -168,8 +167,7 @@ func hasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 	return total > 0, nil
 }
 
-// IsDormantUser returns true if the user shows no recent events or contributions
-// since the specified time.
+// isDormant determines if a user is dormant by verifying events, contributions, and recent login activity.
 func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time, recentLogin bool) (bool, error) {
 	log.Debug().Str("User", user).Msg("Checking dormant status for user.")
 
@@ -199,7 +197,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	return dormant, nil
 }
 
-// getUserLogins fetches all audit log events for user.login for the past 90 days.
+// getUserLogins retrieves audit log events for user login actions over the past 90 days and returns a mapping of login to the most recent login time.
 func getUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string) (map[string]time.Time, error) {
 	log.Info().Str("Enterprise", enterpriseSlug).Msg("Fetching audit logs for enterprise.")
 
@@ -266,7 +264,7 @@ func getUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlu
 	return loginMap, nil
 }
 
-// getUserEmail queries the enterprise GraphQL API for the user's email.
+// getUserEmail queries the enterprise GraphQL API to retrieve the email address for the specified user.
 func getUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug string, user string) (string, error) {
 	log.Debug().Str("User", user).Msg("Fetching email for user.")
 
@@ -332,7 +330,7 @@ func getUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug stri
 	return "N/A", nil
 }
 
-// runUsersReport creates a CSV report with columns: ID, Login, Name, Email, Last Login, Dormant?
+// runUsersReport creates a CSV report containing enterprise user details, including email and dormant status.
 func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug string, filename string) error {
 	// Standardize context timeout and logging for report generation
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)

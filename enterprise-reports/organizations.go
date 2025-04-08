@@ -24,7 +24,7 @@ type Members struct {
 	Type  string
 }
 
-// getEnterpriseOrgs fetches all organizations in the enterprise.
+// getEnterpriseOrgs retrieves all organizations for the specified enterprise.
 func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, config *Config) ([]Organization, error) {
 	log.Info().Str("EnterpriseSlug", config.EnterpriseSlug).Msg("Fetching organizations for enterprise.")
 	var query struct {
@@ -78,7 +78,7 @@ func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, conf
 	return orgs, nil
 }
 
-// getOrganization gets the specified organization.
+// getOrganization fetches the details for the specified organization.
 func getOrganization(ctx context.Context, restClient *github.Client, orgLogin string) (*github.Organization, error) {
 	log.Debug().Str("OrganizationLogin", orgLogin).Msg("Fetching organization details.")
 
@@ -171,7 +171,7 @@ func getOrganizationMemberships(ctx context.Context, graphQLClient *githubv4.Cli
 }
 */
 
-// getOrganizationMemberships uses the REST API to fetch all organization memberships in the given organization.
+// getOrganizationMemberships retrieves all organization memberships for the specified organization using the REST API.
 func getOrganizationMemberships(ctx context.Context, restClient *github.Client, orgLogin string) ([]*github.User, error) {
 	log.Info().Str("Organization", orgLogin).Msg("Fetching organization memberships.")
 
@@ -235,7 +235,7 @@ func getOrganizationMemberships(ctx context.Context, restClient *github.Client, 
 	return membershipList, nil
 }
 
-// getOrganizationMember uses the REST API to fetch the membership of a user in the given organization.
+// getOrganizationMember retrieves the membership details of a user in the given organization via the REST API.
 func getOrganizationMember(ctx context.Context, restClient *github.Client, orgLogin, userLogin string) (*github.Membership, error) {
 	log.Debug().Str("Organization", orgLogin).Str("User", userLogin).Msg("Fetching organization membership.")
 
@@ -255,7 +255,7 @@ func getOrganizationMember(ctx context.Context, restClient *github.Client, orgLo
 	return membership, nil
 }
 
-// getUserById uses the REST API to fetch the user with the given ID.
+// getUserById fetches a user by their ID using the REST API.
 func getUserById(ctx context.Context, restClient *github.Client, id int64) (*github.User, error) {
 	log.Debug().Int64("User", id).Msg("Fetching user by ID.")
 
@@ -275,13 +275,7 @@ func getUserById(ctx context.Context, restClient *github.Client, id int64) (*git
 	return user, nil
 }
 
-// runOrganizationsReport generates a report of all organizations in the enterprise.
-// It includes the following information:
-// - Organization name
-// - Organization ID
-// - Organization Default Repository Permission
-// - Organization Members
-// - Total Members
+// runOrganizationsReport generates a CSV report for all enterprise organizations, including organization details and memberships.
 func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, config *Config, filename string) error {
 
 	log.Info().Str("Filename", filename).Msg("Starting organizations report generation.")

@@ -20,7 +20,7 @@ type RepoTeam struct {
 	Permission    string
 }
 
-// getOrganization Repositories
+// getOrganizationRepositories retrieves all repositories for the specified organization.
 func getOrganizationRepositories(ctx context.Context, restClient *github.Client, org string) ([]*github.Repository, error) {
 	log.Info().Str("organization", org).Msg("Getting repositories")
 
@@ -64,7 +64,7 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 	return allRepos, nil
 }
 
-// getTeams returns a list of teams for the given repository.
+// getTeams retrieves all teams for the specified repository.
 func getTeams(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.Team, error) {
 	log.Info().Str("repository", repo).Msg("Getting teams")
 
@@ -100,7 +100,7 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 	return allTeams, nil
 }
 
-// getExternalGroups returns a list of external groups connected to the given team.
+// getExternalGroups retrieves external groups for the specified team.
 func getExternalGroups(ctx context.Context, restClient *github.Client, owner, teamSlug string) (*github.ExternalGroupList, error) {
 	log.Info().Str("teamSlug", teamSlug).Msg("Getting external groups")
 
@@ -121,7 +121,7 @@ func getExternalGroups(ctx context.Context, restClient *github.Client, owner, te
 	return externalGroups, nil
 }
 
-// getCustomProperties returns a list of custom properties for the given repository.
+// getCustomProperties retrieves all custom properties for the specified repository.
 func getCustomProperties(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.CustomPropertyValue, error) {
 	log.Info().Str("repository", repo).Msg("Getting custom properties")
 
@@ -142,10 +142,7 @@ func getCustomProperties(ctx context.Context, restClient *github.Client, owner, 
 	return customProperties, nil
 }
 
-// runRepositoryReport generates a report for the given repository.
-// It has columns for the repository ID, owner, name, visibility, whether it is archived, pushed at, created at, topics, custom properties.
-// It also has a column for the teams that have access to the repository.
-// The teams is listed as a group of information including the team name, id, slug, external group, and permission level on the repo.
+// runRepositoryReport generates a CSV report for repositories, including repository details, teams, and custom properties.
 func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, config *Config, filename string) error {
 	log.Info().Str("filename", filename).Msg("Starting repository report")
 
