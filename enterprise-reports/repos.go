@@ -23,6 +23,7 @@ type RepoTeam struct {
 // getOrganizationRepositories retrieves all repositories for the specified organization.
 func getOrganizationRepositories(ctx context.Context, restClient *github.Client, org string) ([]*github.Repository, error) {
 	log.Info().Str("organization", org).Msg("Getting repositories")
+	log.Debug().Str("organization", org).Msg("Starting repositories retrieval")
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type: "all",
@@ -31,7 +32,6 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 			Page:    1,
 		},
 	}
-
 	allRepos := []*github.Repository{}
 
 	for {
@@ -40,27 +40,19 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 			log.Error().Err(err).Str("organization", org).Msg("Failed to get repositories")
 			return nil, fmt.Errorf("failed to get repositories for organization: %w", err)
 		}
-
+		log.Debug().Int("repos_in_page", len(repos)).Msg("Fetched a page of repositories")
 		allRepos = append(allRepos, repos...)
 
 		// Check rate limit
-		if resp.Rate.Remaining < RESTRateLimitThreshold {
-			log.Warn().Int("remaining", resp.Rate.Remaining).
-				Int("limit", resp.Rate.Limit).
-				Msg("Rate limit low, waiting until reset")
-			waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-		}
+		handleRESTRateLimit(ctx, resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
 			break
 		}
+		opts.Page = resp.NextPage
 	}
-
-	log.Info().Int("count", len(allRepos)).
-		Str("organization", org).
-		Msg("Found repositories")
-
+	log.Info().Int("count", len(allRepos)).Str("organization", org).Msg("Found repositories")
 	return allRepos, nil
 }
 
@@ -72,7 +64,6 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 		PerPage: 100,
 		Page:    1,
 	}
-
 	allTeams := []*github.Team{}
 
 	for {
@@ -81,21 +72,17 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 			log.Error().Err(err).Str("repository", repo).Msg("Failed to get teams")
 			return nil, fmt.Errorf("failed to get teams for repository: %w", err)
 		}
-
+		log.Debug().Int("teams_in_page", len(teams)).Msg("Fetched a page of teams")
 		allTeams = append(allTeams, teams...)
 
 		// Check rate limit
-		if resp.Rate.Remaining < RESTRateLimitThreshold {
-			log.Warn().Int("remaining", resp.Rate.Remaining).
-				Int("limit", resp.Rate.Limit).
-				Msg("Rate limit low, waiting until reset")
-			waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-		}
+		handleRESTRateLimit(ctx, resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
 			break
 		}
+		opts.Page = resp.NextPage
 	}
 	return allTeams, nil
 }
@@ -109,14 +96,10 @@ func getExternalGroups(ctx context.Context, restClient *github.Client, owner, te
 		log.Error().Err(err).Msg("Failed to get external groups")
 		return nil, fmt.Errorf("failed to get external groups for repository: %w", err)
 	}
+	log.Debug().Int("external_groups_count", len(externalGroups.Groups)).Msg("Fetched external groups")
 
 	// Check rate limit
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		log.Warn().Int("remaining", resp.Rate.Remaining).
-			Int("limit", resp.Rate.Limit).
-			Msg("Rate limit low, waiting until reset")
-		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+	handleRESTRateLimit(ctx, resp.Rate)
 
 	return externalGroups, nil
 }
@@ -132,12 +115,7 @@ func getCustomProperties(ctx context.Context, restClient *github.Client, owner, 
 	}
 
 	// Check rate limit
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		log.Warn().Int("remaining", resp.Rate.Remaining).
-			Int("limit", resp.Rate.Limit).
-			Msg("Rate limit low, waiting until reset")
-		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+	handleRESTRateLimit(ctx, resp.Rate)
 
 	return customProperties, nil
 }
@@ -182,6 +160,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 	}
 
 	for _, org := range organizations {
+		log.Debug().Str("organization", org.Login).Msg("Processing organization")
 		// Get the organization's repositories.
 		repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
 		if err != nil {
@@ -189,7 +168,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 			continue
 		}
 		for _, repo := range repos {
-
+			log.Debug().Str("repository", repo.GetFullName()).Msg("Processing repository")
 			repoTeams := []RepoTeam{}
 
 			// Get the repository's teams.
@@ -224,6 +203,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 				repoTeams = append(repoTeams, repoTeam)
 			}
 
+			// Format the teams for the CSV.
 			var teamsFormatted []string
 			for _, t := range repoTeams {
 				externalGroups := ""
@@ -246,6 +226,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 				continue
 			}
 
+			// Format the custom properties for the CSV.
 			var propsFormatted []string
 			for _, property := range customProperties {
 				value := ""
@@ -277,8 +258,9 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 					Msg("Failed to write repository report to CSV")
 				return fmt.Errorf("failed to write repository report to CSV: %w", err)
 			}
+			log.Debug().Str("repository", repo.GetFullName()).Msg("Finished processing repository")
 		}
 	}
-
+	log.Debug().Msg("Completed running repository report")
 	return nil
 }

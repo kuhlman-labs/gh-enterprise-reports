@@ -69,6 +69,16 @@ func waitForLimitReset(ctx context.Context, name string, remaining int, limit in
 	}
 }
 
+// handleRESTRateLimit logs a warning and waits if the REST rate limit is below the threshold.
+func handleRESTRateLimit(ctx context.Context, rate github.Rate) {
+	if rate.Remaining < RESTRateLimitThreshold {
+		log.Warn().Int("remaining", rate.Remaining).
+			Int("limit", rate.Limit).
+			Msg("Rate limit low, waiting until reset")
+		waitForLimitReset(ctx, "REST", rate.Remaining, rate.Limit, rate.Reset.Time)
+	}
+}
+
 // EnsureRateLimits checks the REST, GraphQL, and Audit Log rate limits and waits if limits are low.
 func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	rl, err := checkRateLimit(ctx, restClient)
