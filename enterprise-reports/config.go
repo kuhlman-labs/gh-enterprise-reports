@@ -167,7 +167,12 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	}
 	if conf.Repositories {
 		runReport("Repositories", func() {
-			// TODO: Add Repositories report logic here.
+			currentTime := time.Now()
+			formattedTime := currentTime.Format("20060102150405")
+			fileName := fmt.Sprintf("%s_repositories_report_%s.csv", conf.EnterpriseSlug, formattedTime)
+			if err := runRepositoryReport(ctx, restClient, graphQLClient, conf, fileName); err != nil {
+				log.Error().Err(err).Msg("Failed to run Repositories Report")
+			}
 		})
 	}
 	if conf.Teams {
