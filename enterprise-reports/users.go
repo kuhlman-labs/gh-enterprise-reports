@@ -35,20 +35,23 @@ type enterpriseUsersQuery struct {
 			}
 		} `graphql:"members(first: 100, deployment: CLOUD, after: $cursor)"`
 	} `graphql:"enterprise(slug: $enterpriseSlug)"`
+	RateLimit struct {
+		Cost      int
+		Limit     int
+		Remaining int
+		ResetAt   githubv4.DateTime
+	}
 }
 
 // getEnterpriseUsers queries the GraphQL API and returns a slice of EnterpriseUser.
 // It paginates until all the nodes are retrieved.
-func getEnterpriseUsers(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, slug string) ([]EnterpriseUser, error) {
+func getEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, slug string) ([]EnterpriseUser, error) {
 	log.Info().Str("Enterprise", slug).Msg("Fetching enterprise cloud users.")
 
 	var allUsers []EnterpriseUser
 	var cursor *githubv4.String
 
 	for {
-		// Ensure rate limits before GraphQL call.
-		EnsureRateLimits(ctx, restClient)
-
 		var query enterpriseUsersQuery
 		variables := map[string]interface{}{
 			"enterpriseSlug": githubv4.String(slug),
@@ -70,6 +73,12 @@ func getEnterpriseUsers(ctx context.Context, restClient *github.Client, graphQLC
 			allUsers = append(allUsers, node.EnterpriseUserAccount)
 		}
 
+		// Check for rate limits.
+		if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
+			log.Warn().Int("Remaining", query.RateLimit.Remaining).Int("Limit", query.RateLimit.Limit).Msg("Rate limit low")
+			waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
+		}
+
 		// If there is no next page, break out.
 		if !query.Enterprise.Members.PageInfo.HasNextPage {
 			break
@@ -84,13 +93,17 @@ func getEnterpriseUsers(ctx context.Context, restClient *github.Client, graphQLC
 }
 
 // hasRecentEvents checks if the user has any Public events more recent than the provided time.
-func hasRecentEvents(ctx context.Context, client *github.Client, user string, since time.Time) (bool, error) {
-	// Ensure rate limits before REST call.
-	EnsureRateLimits(ctx, client)
+func hasRecentEvents(ctx context.Context, restClient *github.Client, user string, since time.Time) (bool, error) {
 
-	events, _, err := client.Activity.ListEventsPerformedByUser(ctx, user, false, nil)
+	events, resp, err := restClient.Activity.ListEventsPerformedByUser(ctx, user, false, nil)
 	if err != nil {
 		return false, err
+	}
+
+	// Check rate limits after fetching events.
+	if resp.Rate.Remaining < RESTRateLimitThreshold {
+		log.Warn().Int("Remaining", resp.Rate.Remaining).Int("Limit", resp.Rate.Limit).Msg("Rate limit low")
+		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
 	}
 
 	for _, event := range events {
@@ -106,11 +119,8 @@ func hasRecentEvents(ctx context.Context, client *github.Client, user string, si
 }
 
 // hasRecentContributions checks if the user has any contributions since the provided time.
-func hasRecentContributions(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time) (bool, error) {
+func hasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client, user string, since time.Time) (bool, error) {
 	log.Debug().Str("User", user).Msgf("Checking recent contributions since %s", since)
-
-	// Ensure rate limits before GraphQL call.
-	EnsureRateLimits(ctx, restClient)
 
 	var query struct {
 		User struct {
@@ -121,6 +131,12 @@ func hasRecentContributions(ctx context.Context, restClient *github.Client, grap
 				TotalPullRequestReviewContributions int
 			} `graphql:"contributionsCollection(from: $since)"`
 		} `graphql:"user(login: $login)"`
+		RateLimit struct {
+			Cost      int
+			Limit     int
+			Remaining int
+			ResetAt   githubv4.DateTime
+		}
 	}
 
 	vars := map[string]interface{}{
@@ -130,6 +146,12 @@ func hasRecentContributions(ctx context.Context, restClient *github.Client, grap
 
 	if err := graphQLClient.Query(ctx, &query, vars); err != nil {
 		return false, err
+	}
+
+	// Check for rate limits.
+	if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
+		log.Warn().Int("Remaining", query.RateLimit.Remaining).Int("Limit", query.RateLimit.Limit).Msg("Rate limit low")
+		waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
 	}
 
 	contrib := query.User.ContributionsCollection
@@ -158,7 +180,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	}
 
 	// Check for recent contributions.
-	recentContribs, err := hasRecentContributions(ctx, restClient, graphQLClient, user, since)
+	recentContribs, err := hasRecentContributions(ctx, graphQLClient, user, since)
 	if err != nil {
 		return false, fmt.Errorf("error checking recent contributions for user %s: %w", user, err)
 	}
@@ -178,7 +200,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 }
 
 // getUserLogins fetches all audit log events for user.login for the past 90 days.
-func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug string) (map[string]time.Time, error) {
+func getUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string) (map[string]time.Time, error) {
 	log.Info().Str("Enterprise", enterpriseSlug).Msg("Fetching audit logs for enterprise.")
 
 	// Build query phrase for user.login events.
@@ -194,11 +216,9 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 	var allAuditLogs []*github.AuditEntry
 
 	for {
-		// Ensure rate limits before REST call.
-		EnsureRateLimits(ctx, client)
 
 		// Fetch audit logs with pagination.
-		auditLogs, resp, err := client.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
+		auditLogs, resp, err := restClient.Enterprise.GetAuditLog(ctx, enterpriseSlug, opts)
 		if err != nil {
 			log.Error().Str("Enterprise", enterpriseSlug).Err(err).Msg("Failed to fetch audit logs.")
 			return nil, fmt.Errorf("failed to query audit logs: %w", err)
@@ -210,6 +230,12 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 			Msg("Fetched a page of audit logs.")
 
 		allAuditLogs = append(allAuditLogs, auditLogs...)
+
+		// Check rate limits after fetching a page of audit logs.
+		if resp.Rate.Remaining < AuditLogRateLimitThreshold {
+			log.Warn().Int("Remaining", resp.Rate.Remaining).Int("Limit", resp.Rate.Limit).Msg("Rate limit low")
+			waitForLimitReset(ctx, "Audit Log", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
+		}
 
 		if resp.After == "" {
 			break
@@ -241,11 +267,8 @@ func getUserLogins(ctx context.Context, client *github.Client, enterpriseSlug st
 }
 
 // getUserEmail queries the enterprise GraphQL API for the user's email.
-func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, slug string, user string) (string, error) {
+func getUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug string, user string) (string, error) {
 	log.Debug().Str("User", user).Msg("Fetching email for user.")
-
-	// Ensure rate limits before GraphQL call.
-	EnsureRateLimits(ctx, restClient)
 
 	var query struct {
 		Enterprise struct {
@@ -273,6 +296,12 @@ func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient 
 				}
 			}
 		} `graphql:"enterprise(slug: $slug)"`
+		RateLimit struct {
+			Cost      int
+			Limit     int
+			Remaining int
+			ResetAt   githubv4.DateTime
+		}
 	}
 	variables := map[string]interface{}{
 		"slug":  githubv4.String(slug),
@@ -281,6 +310,12 @@ func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient 
 	if err := graphQLClient.Query(ctx, &query, variables); err != nil {
 		log.Error().Str("Enterprise", slug).Str("User", user).Err(err).Msg("Failed to fetch email for user.")
 		return "", fmt.Errorf("failed to query external identities: %w", err)
+	}
+
+	// Check for rate limits.
+	if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
+		log.Warn().Int("Remaining", query.RateLimit.Remaining).Int("Limit", query.RateLimit.Limit).Msg("Rate limit low")
+		waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
 	}
 
 	for _, node := range query.Enterprise.OwnerInfo.SamlIdentityProvider.ExternalIdentities.Nodes {
@@ -299,14 +334,23 @@ func getUserEmail(ctx context.Context, restClient *github.Client, graphQLClient 
 
 // runUsersReport creates a CSV report with columns: ID, Login, Name, Email, Last Login, Dormant?
 func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug string, filename string) error {
-	log.Info().Str("Filename", filename).Msg("Creating users report.")
+	// Standardize context timeout and logging for report generation
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 
-	// Open or create the CSV file.
+	log.Info().Str("Filename", filename).Msg("Starting users report generation.")
+
+	// Create and open the CSV file
 	f, err := os.Create(filename)
 	if err != nil {
+		log.Error().Err(err).Str("Filename", filename).Msg("Failed to create report file.")
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Error().Err(err).Str("Filename", filename).Msg("Failed to close report file.")
+		}
+	}()
 
 	writer := csv.NewWriter(f)
 	defer func() {
@@ -316,29 +360,33 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		}
 	}()
 
-	// Write header row.
+	// Write header row
 	header := []string{"ID", "Login", "Name", "Email", "Last Login", "Dormant?"}
 	if err := writer.Write(header); err != nil {
+		log.Error().Err(err).Msg("Failed to write CSV header.")
 		return fmt.Errorf("failed to write header: %w", err)
 	}
 
 	// Define inactivity threshold (e.g., 90 days).
 	referenceTime := time.Now().UTC().AddDate(0, 0, -90) // Ensure UTC
 
+	// Fetch user logins
 	userLogins, err := getUserLogins(ctx, restClient, enterpriseSlug)
 	if err != nil {
 		log.Warn().Err(err).Msg("Could not retrieve user login events.")
 		userLogins = make(map[string]time.Time)
 	}
 
-	users, err := getEnterpriseUsers(ctx, restClient, graphQLClient, enterpriseSlug)
+	// Fetch enterprise users
+	users, err := getEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
+		log.Error().Err(err).Msg("Failed to fetch enterprise users.")
 		return fmt.Errorf("error fetching users: %w", err)
 	}
 
-	// Use a buffered channel to collect rows for CSV writing.
+	// Concurrency setup
 	rowsCh := make(chan []string, len(users))
-	semaphore := make(chan struct{}, 10) // limit concurrent requests to 10
+	semaphore := make(chan struct{}, 10) // Limit concurrent requests to 10
 	var wg sync.WaitGroup
 	var writeErr error
 	var writeErrMu sync.Mutex
@@ -347,12 +395,12 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		wg.Add(1)
 		go func(u EnterpriseUser) {
 			defer wg.Done()
-			semaphore <- struct{}{}        // acquire semaphore token
-			defer func() { <-semaphore }() // release token
+			semaphore <- struct{}{}        // Acquire semaphore token
+			defer func() { <-semaphore }() // Release token
 
 			log.Debug().Str("User", u.Login).Msg("Processing user.")
 
-			email, err := getUserEmail(ctx, restClient, graphQLClient, enterpriseSlug, u.Login)
+			email, err := getUserEmail(ctx, graphQLClient, enterpriseSlug, u.Login)
 			if err != nil {
 				log.Warn().Str("User", u.Login).Err(err).Msg("Could not retrieve email for user.")
 				email = "N/A"
@@ -378,13 +426,6 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 				dormantStr = "Yes"
 			}
 
-			// Log processed user details.
-			log.Debug().Str("User", u.Login).
-				Str("Email", email).
-				Str("LastLogin", lastLoginStr).
-				Bool("Dormant", dormant).
-				Msg("User processed.")
-
 			row := []string{
 				fmt.Sprintf("%v", u.ID),
 				u.Login,
@@ -403,24 +444,26 @@ func runUsersReport(ctx context.Context, restClient *github.Client, graphQLClien
 		}(u)
 	}
 
-	// Close rowsCh after all goroutines finish.
+	// Close rowsCh after all goroutines finish
 	go func() {
 		wg.Wait()
 		close(rowsCh)
 	}()
 
-	// Write CSV rows sequentially.
+	// Write CSV rows sequentially
 	for row := range rowsCh {
 		if err := writer.Write(row); err != nil {
+			log.Error().Err(err).Msg("Failed to write row to CSV.")
 			return fmt.Errorf("failed to write row for user: %w", err)
 		}
 	}
 
-	// Check for errors during CSV writing.
+	// Check for errors during CSV writing
 	if writeErr != nil {
+		log.Error().Err(writeErr).Msg("Error occurred during CSV writing.")
 		return writeErr
 	}
 
-	log.Info().Str("Filename", filename).Msg("Users report completed successfully.")
+	log.Info().Str("Filename", filename).Msg("Users report generated successfully.")
 	return nil
 }

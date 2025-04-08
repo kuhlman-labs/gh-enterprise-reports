@@ -11,10 +11,10 @@ import (
 )
 
 // RESTRateLimitThreshold is the minimum remaining calls before waiting.
-const RESTRateLimitThreshold = 10
+const RESTRateLimitThreshold = 15
 
 // AuditLogRateLimitThreshold is the minimum remaining calls before waiting.
-const AuditLogRateLimitThreshold = 20
+const AuditLogRateLimitThreshold = 15
 
 // GraphQLRateLimitThreshold is the minimum remaining points before waiting.
 const GraphQLRateLimitThreshold = 100

@@ -61,7 +61,6 @@ func main() {
 			}
 			zerolog.SetGlobalLevel(level)
 
-			// Use consoleLogger for terminal output while keeping full debug logs in the file.
 			log.Logger = consoleLogger
 
 			// Create REST and GraphQL clients.
@@ -85,7 +84,7 @@ func main() {
 			enterprisereports.EnsureRateLimits(ctx, restClient)
 
 			// Start monitoring rate limits every 15 seconds asynchronously and log the results.
-			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 15*time.Second)
+			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 30*time.Second)
 
 			// Run the reports.
 			enterprisereports.RunReports(ctx, config, restClient, graphQLClient)
