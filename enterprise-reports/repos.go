@@ -22,7 +22,7 @@ type RepoTeam struct {
 
 // getOrganization Repositories
 func getOrganizationRepositories(ctx context.Context, restClient *github.Client, org string) ([]*github.Repository, error) {
-	log.Info().Msgf("Getting repositories for organization %s", org)
+	log.Info().Str("organization", org).Msg("Getting repositories")
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type: "all",
@@ -37,7 +37,7 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 	for {
 		repos, resp, err := restClient.Repositories.ListByOrg(ctx, org, opts)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to get repositories for organization %s", org)
+			log.Error().Err(err).Str("organization", org).Msg("Failed to get repositories")
 			return nil, fmt.Errorf("failed to get repositories for organization: %w", err)
 		}
 
@@ -45,7 +45,9 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 
 		// Check rate limit
 		if resp.Rate.Remaining < RESTRateLimitThreshold {
-			log.Warn().Msg("Rate limit is below threshold")
+			log.Warn().Int("remaining", resp.Rate.Remaining).
+				Int("limit", resp.Rate.Limit).
+				Msg("Rate limit low, waiting until reset")
 			waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
 		}
 
@@ -55,14 +57,16 @@ func getOrganizationRepositories(ctx context.Context, restClient *github.Client,
 		}
 	}
 
-	log.Info().Msgf("Found %d repositories for organization %s", len(allRepos), org)
+	log.Info().Int("count", len(allRepos)).
+		Str("organization", org).
+		Msg("Found repositories")
 
 	return allRepos, nil
 }
 
 // getTeams returns a list of teams for the given repository.
 func getTeams(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.Team, error) {
-	log.Info().Msgf("Getting teams for repository %s", repo)
+	log.Info().Str("repository", repo).Msg("Getting teams")
 
 	opts := &github.ListOptions{
 		PerPage: 100,
@@ -74,7 +78,7 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 	for {
 		teams, resp, err := restClient.Repositories.ListTeams(ctx, owner, repo, opts)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to get teams for repository %s", repo)
+			log.Error().Err(err).Str("repository", repo).Msg("Failed to get teams")
 			return nil, fmt.Errorf("failed to get teams for repository: %w", err)
 		}
 
@@ -82,7 +86,9 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 
 		// Check rate limit
 		if resp.Rate.Remaining < RESTRateLimitThreshold {
-			log.Warn().Msg("Rate limit is below threshold")
+			log.Warn().Int("remaining", resp.Rate.Remaining).
+				Int("limit", resp.Rate.Limit).
+				Msg("Rate limit low, waiting until reset")
 			waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
 		}
 
@@ -96,17 +102,19 @@ func getTeams(ctx context.Context, restClient *github.Client, owner, repo string
 
 // getExternalGroups returns a list of external groups connected to the given team.
 func getExternalGroups(ctx context.Context, restClient *github.Client, owner, teamSlug string) (*github.ExternalGroupList, error) {
-	log.Info().Msgf("Getting external groups for repository %s", teamSlug)
+	log.Info().Str("teamSlug", teamSlug).Msg("Getting external groups")
 
 	externalGroups, resp, err := restClient.Teams.ListExternalGroupsForTeamBySlug(ctx, owner, teamSlug)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get external groups for repository")
+		log.Error().Err(err).Msg("Failed to get external groups")
 		return nil, fmt.Errorf("failed to get external groups for repository: %w", err)
 	}
 
 	// Check rate limit
 	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		log.Warn().Msg("Rate limit is below threshold")
+		log.Warn().Int("remaining", resp.Rate.Remaining).
+			Int("limit", resp.Rate.Limit).
+			Msg("Rate limit low, waiting until reset")
 		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
 	}
 
@@ -115,17 +123,19 @@ func getExternalGroups(ctx context.Context, restClient *github.Client, owner, te
 
 // getCustomProperties returns a list of custom properties for the given repository.
 func getCustomProperties(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.CustomPropertyValue, error) {
-	log.Info().Msgf("Getting custom properties for repository %s", repo)
+	log.Info().Str("repository", repo).Msg("Getting custom properties")
 
 	customProperties, resp, err := restClient.Repositories.GetAllCustomPropertyValues(ctx, owner, repo)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get custom properties for repository")
+		log.Error().Err(err).Str("repository", repo).Msg("Failed to get custom properties")
 		return nil, fmt.Errorf("failed to get custom properties for repository: %w", err)
 	}
 
 	// Check rate limit
 	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		log.Warn().Msg("Rate limit is below threshold")
+		log.Warn().Int("remaining", resp.Rate.Remaining).
+			Int("limit", resp.Rate.Limit).
+			Msg("Rate limit low, waiting until reset")
 		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
 	}
 
@@ -137,12 +147,12 @@ func getCustomProperties(ctx context.Context, restClient *github.Client, owner, 
 // It also has a column for the teams that have access to the repository.
 // The teams is listed as a group of information including the team name, id, slug, external group, and permission level on the repo.
 func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, config *Config, filename string) error {
-	log.Info().Msg("Running repository report")
+	log.Info().Str("filename", filename).Msg("Starting repository report")
 
 	// Create and open the CSV file
 	f, err := os.Create(filename)
 	if err != nil {
-		log.Error().Err(err).Str("Filename", filename).Msg("Failed to create report file.")
+		log.Error().Err(err).Str("filename", filename).Msg("Failed to create report file")
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 	defer f.Close()
@@ -178,7 +188,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 		// Get the organization's repositories.
 		repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to get repositories for organization %s", org.Login)
+			log.Error().Err(err).Str("organization", org.Login).Msg("Failed to get repositories")
 			continue
 		}
 		for _, repo := range repos {
@@ -188,7 +198,9 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 			// Get the repository's teams.
 			teams, err := getTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
 			if err != nil {
-				log.Error().Err(err).Msgf("Failed to get teams for repository %s", repo.GetFullName())
+				log.Error().Err(err).
+					Str("repository", repo.GetFullName()).
+					Msg("Failed to get teams")
 				continue
 			}
 			for _, team := range teams {
@@ -232,7 +244,8 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 			// Get the repository's custom properties.
 			customProperties, err := getCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
 			if err != nil {
-				log.Error().Err(err).Msg("Failed to get custom properties for repository")
+				log.Error().Err(err).Str("repository", repo.GetFullName()).
+					Msg("Failed to get custom properties")
 				continue
 			}
 
@@ -263,7 +276,8 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 				propsStr,
 				teamsStr,
 			}); err != nil {
-				log.Error().Err(err).Msg("Failed to write repository report to CSV")
+				log.Error().Err(err).Str("repository", repo.GetFullName()).
+					Msg("Failed to write repository report to CSV")
 				return fmt.Errorf("failed to write repository report to CSV: %w", err)
 			}
 		}
