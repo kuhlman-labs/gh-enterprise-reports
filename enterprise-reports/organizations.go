@@ -281,6 +281,7 @@ func getUserById(ctx context.Context, restClient *github.Client, id int64) (*git
 // - Organization ID
 // - Organization Default Repository Permission
 // - Organization Members
+// - Total Members
 func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, config *Config, filename string) error {
 
 	log.Info().Str("Filename", filename).Msg("Starting organizations report generation.")
@@ -311,6 +312,7 @@ func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client,
 		"Organization ID",
 		"Organization Default Repository Permission",
 		"Members",
+		"Total Members",
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to write CSV header.")
 		return err
@@ -396,7 +398,7 @@ OuterLoop:
 		default:
 		}
 
-		var orgLogin, orgID, defaultRepoPermission, membersString string
+		var orgLogin, orgID, defaultRepoPermission, membersString, totalMembers string
 
 		if result.err != nil {
 			log.Error().Err(result.err).Msg("Error processing organization. Writing placeholder information.")
@@ -404,6 +406,7 @@ OuterLoop:
 			orgID = "N/A"
 			defaultRepoPermission = "N/A"
 			membersString = "N/A"
+			totalMembers = "N/A"
 		} else {
 			orgLogin = result.organization.GetLogin()
 			orgID = result.organization.GetNodeID()
@@ -419,6 +422,7 @@ OuterLoop:
 				))
 			}
 			membersString = strings.Join(memberDetails, ",")
+			totalMembers = fmt.Sprintf("%d", len(result.members))
 		}
 
 		if err := writer.Write([]string{
@@ -426,6 +430,7 @@ OuterLoop:
 			orgID,
 			defaultRepoPermission,
 			membersString,
+			totalMembers,
 		}); err != nil {
 			log.Error().Err(err).Str("Organization", orgLogin).Msg("Failed to write organization to report. Skipping.")
 			continue

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,20 +15,24 @@ import (
 
 func main() {
 	// Open log file in append mode.
-	file, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to open log file")
 	}
-	// Ensure the log file is closed properly.
-	defer file.Close()
+	defer logFile.Close()
 
-	// Create a multiwriter to log to both terminal and file.
-	writer := io.MultiWriter(os.Stderr, file)
+	// Create a ConsoleWriter with colored output for the terminal.
+	consoleWriter := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: time.RFC3339,
+		NoColor:    false,
+	}
 
-	// Initialize zerolog with console writer for terminal and full debug logs for the file.
-	log.Logger = zerolog.New(writer).With().Timestamp().Logger()
-	consoleLogger := log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	// Setup logger with both file and console outputs.
+	configuredLogger := zerolog.New(zerolog.MultiLevelWriter(logFile, consoleWriter)).With().Timestamp().Logger()
+	log.Logger = configuredLogger
 
+	// Create a new configuration object.
 	config := &enterprisereports.Config{}
 
 	// Add context cancellation for long-running operations.
@@ -56,12 +59,10 @@ func main() {
 			// Set global log level for console output based on configuration.
 			level, err := zerolog.ParseLevel(config.LogLevel)
 			if err != nil {
-				consoleLogger.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
+				log.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
 				level = zerolog.InfoLevel
 			}
 			zerolog.SetGlobalLevel(level)
-
-			log.Logger = consoleLogger
 
 			// Create REST and GraphQL clients.
 			restClient, err := enterprisereports.NewRESTClient(ctx, config)
