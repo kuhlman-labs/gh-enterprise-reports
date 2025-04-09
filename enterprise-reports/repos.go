@@ -165,9 +165,11 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 		return err
 	}
 
+	// Process each organization
 	for _, org := range organizations {
-		wg.Add(1) // add wait group for each organization
-		go func(org *Organization) {
+		orgCopy := org // capture local copy
+		wg.Add(1)      // add wait group for each organization
+		go func(org Organization) {
 			defer wg.Done()
 			sem <- struct{}{}        // acquire semaphore
 			defer func() { <-sem }() // release semaphore
@@ -270,7 +272,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 					log.Debug().Str("repository", repo.GetFullName()).Msg("Finished processing repository")
 				}(repo, org.Login)
 			}
-		}(&org)
+		}(orgCopy) // end of organization goroutine
 	}
 
 	// Close rowChan after all goroutines complete

@@ -331,16 +331,15 @@ func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client,
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit the number of concurrent workers
 
+	// Start worker function with context cancellation checks
 	worker := func() {
 		defer wg.Done()
 		for org := range orgChan {
-			select {
-			case <-ctx.Done():
+			// Check for context cancellation before processing an organization.
+			if ctx.Err() != nil {
 				log.Warn().Str("Organization", org.Login).Msg("Context canceled, stopping worker.")
 				return
-			default:
 			}
-
 			semaphore <- struct{}{} // Acquire semaphore token
 			organization, err := getOrganization(ctx, restClient, org.Login)
 			<-semaphore // Release token
@@ -348,6 +347,11 @@ func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client,
 				log.Error().Err(err).Str("Organization", org.Login).Msg("Failed to fetch organization details. Marking as unavailable.")
 				resultChan <- orgResult{organization: nil, members: nil, err: fmt.Errorf("details not available for %s", org.Login)}
 				continue
+			}
+			// Check cancellation after fetching organization details.
+			if ctx.Err() != nil {
+				log.Warn().Str("Organization", org.Login).Msg("Context canceled after fetching details, stopping worker.")
+				return
 			}
 
 			users, err := getOrganizationMemberships(ctx, restClient, organization.GetLogin())
