@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/rs/zerolog/log"
@@ -138,8 +139,8 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 
 	// Write the CSV header
 	if err := w.Write([]string{
-		"repository",
 		"owner",
+		"repository",
 		"archived",
 		"visibility",
 		"pushed_at",
@@ -147,11 +148,16 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 		"topics",
 		"custom_properties",
 		"teams",
-		"external_groups",
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to write CSV header")
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
+
+	// Create a channel for CSV rows
+	rowChan := make(chan []string)
+	// Create a concurrency limiter for up to 5 concurrent requests
+	sem := make(chan struct{}, 5)
+	var wg sync.WaitGroup
 
 	// Get Enterprise Organizations
 	organizations, err := getEnterpriseOrgs(ctx, graphQLClient, config)
@@ -160,107 +166,127 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 	}
 
 	for _, org := range organizations {
-		log.Debug().Str("organization", org.Login).Msg("Processing organization")
-		// Get the organization's repositories.
-		repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
-		if err != nil {
-			log.Error().Err(err).Str("organization", org.Login).Msg("Failed to get repositories")
-			continue
-		}
-		for _, repo := range repos {
-			log.Debug().Str("repository", repo.GetFullName()).Msg("Processing repository")
-			repoTeams := []RepoTeam{}
-
-			// Get the repository's teams.
-			teams, err := getTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+		wg.Add(1) // add wait group for each organization
+		go func(org *Organization) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire semaphore
+			defer func() { <-sem }() // release semaphore
+			log.Debug().Str("organization", org.Login).Msg("Processing organization")
+			repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
 			if err != nil {
-				log.Error().Err(err).
-					Str("repository", repo.GetFullName()).
-					Msg("Failed to get teams")
-				continue
+				log.Error().Err(err).Str("organization", org.Login).Msg("Failed to get repositories")
+				return
 			}
-			for _, team := range teams {
-				// Get the Teams's external groups.
-				externalGroups, err := getExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), team.GetSlug())
-				if err != nil {
-					log.Error().Err(err).Msgf("Failed to get external groups for repository %s", repo.GetFullName())
-					continue
-				}
+			for _, repo := range repos {
+				wg.Add(1) // add wait group for each repository
+				go func(repo *github.Repository, orgLogin string) {
+					defer wg.Done()
+					sem <- struct{}{}        // acquire semaphore
+					defer func() { <-sem }() // release semaphore
 
-				groupNames := []string{}
+					log.Debug().Str("repository", repo.GetFullName()).Msg("Processing repository")
+					// Process teams for the repository
+					repoTeams := []RepoTeam{}
+					var teamsMu sync.Mutex
+					var teamWg sync.WaitGroup // local wait group for teams
 
-				for _, externalGroup := range externalGroups.Groups {
-					groupNames = append(groupNames, *externalGroup.GroupName)
-				}
+					teams, err := getTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+					if err != nil {
+						log.Error().Err(err).Str("repository", repo.GetFullName()).Msg("Failed to get teams")
+						return
+					}
+					for _, team := range teams {
+						teamWg.Add(1)
+						go func(t *github.Team) {
+							defer teamWg.Done()
+							externalGroups, err := getExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())
+							if err != nil {
+								log.Error().Err(err).Msgf("Failed to get external groups for repository %s", repo.GetFullName())
+								return
+							}
+							groupNames := []string{}
+							for _, eg := range externalGroups.Groups {
+								groupNames = append(groupNames, *eg.GroupName)
+							}
+							repoTeam := RepoTeam{
+								TeamID:        t.GetID(),
+								TeamName:      t.GetName(),
+								TeamSlug:      t.GetSlug(),
+								ExternalGroup: groupNames,
+								Permission:    t.GetPermission(),
+							}
+							teamsMu.Lock()
+							repoTeams = append(repoTeams, repoTeam)
+							teamsMu.Unlock()
+						}(team)
+					}
+					teamWg.Wait() // wait for all team goroutines to complete
 
-				repoTeam := RepoTeam{
-					TeamID:        team.GetID(),
-					TeamName:      team.GetName(),
-					TeamSlug:      team.GetSlug(),
-					ExternalGroup: groupNames,
-					Permission:    team.GetPermission(),
-				}
-				repoTeams = append(repoTeams, repoTeam)
+					var teamsFormatted []string
+					for _, t := range repoTeams {
+						externalGroupsStr := ""
+						if len(t.ExternalGroup) > 0 {
+							externalGroupsStr = fmt.Sprintf("%s", t.ExternalGroup)
+						} else {
+							externalGroupsStr = "N/A"
+						}
+						teamsFormatted = append(teamsFormatted, fmt.Sprintf("(Team Name: %s, TeamID: %d, Team Slug: %s, External Group: %s, Permission: %s)",
+							t.TeamName, t.TeamID, t.TeamSlug, externalGroupsStr, t.Permission))
+					}
+					teamsStr := "N/A"
+					if len(teamsFormatted) > 0 {
+						teamsStr = fmt.Sprintf("%s", teamsFormatted)
+					}
+
+					customProperties, err := getCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+					if err != nil {
+						log.Error().Err(err).Str("repository", repo.GetFullName()).Msg("Failed to get custom properties")
+						return
+					}
+					var propsFormatted []string
+					for _, property := range customProperties {
+						value := ""
+						if property.Value != nil {
+							value = fmt.Sprintf("%v", property.Value)
+						}
+						propName := ""
+						if property.PropertyName != "" {
+							propName = property.PropertyName
+						}
+						propsFormatted = append(propsFormatted, fmt.Sprintf("{%s: %s}", propName, value))
+					}
+					propsStr := "(" + strings.Join(propsFormatted, ",") + ")"
+					rowChan <- []string{
+						repo.GetOwner().GetLogin(),
+						repo.GetName(),
+						fmt.Sprintf("%t", repo.GetArchived()),
+						repo.GetVisibility(),
+						repo.GetPushedAt().String(),
+						repo.GetCreatedAt().String(),
+						fmt.Sprintf("%v", repo.Topics),
+						propsStr,
+						teamsStr,
+					}
+					log.Debug().Str("repository", repo.GetFullName()).Msg("Finished processing repository")
+				}(repo, org.Login)
 			}
+		}(&org)
+	}
 
-			// Format the teams for the CSV.
-			var teamsFormatted []string
-			for _, t := range repoTeams {
-				externalGroups := ""
-				if len(t.ExternalGroup) > 0 {
-					externalGroups = fmt.Sprintf("%s", t.ExternalGroup)
-				}
-				teamsFormatted = append(teamsFormatted, fmt.Sprintf("(Team Name: %s, TeamID: %d, Team Slug: %s, External Group: %s, Permission: %s)",
-					t.TeamName, t.TeamID, t.TeamSlug, externalGroups, t.Permission))
-			}
-			teamsStr := ""
-			if len(teamsFormatted) > 0 {
-				teamsStr = fmt.Sprintf("%s", teamsFormatted)
-			}
+	// Close rowChan after all goroutines complete
+	go func() {
+		wg.Wait()
+		close(rowChan)
+	}()
 
-			// Get the repository's custom properties.
-			customProperties, err := getCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
-			if err != nil {
-				log.Error().Err(err).Str("repository", repo.GetFullName()).
-					Msg("Failed to get custom properties")
-				continue
-			}
-
-			// Format the custom properties for the CSV.
-			var propsFormatted []string
-			for _, property := range customProperties {
-				value := ""
-				if property.Value != nil {
-					value = fmt.Sprintf("%v", property.Value)
-				}
-				// Assumes property.PropertyName is a string pointer.
-				propName := ""
-				if property.PropertyName != "" {
-					propName = property.PropertyName
-				}
-				propsFormatted = append(propsFormatted, fmt.Sprintf("{%s: %s}", propName, value))
-			}
-			propsStr := "(" + strings.Join(propsFormatted, ",") + ")"
-
-			// Write the repository report to the CSV file.
-			if err := w.Write([]string{
-				repo.GetFullName(),
-				repo.GetOwner().GetLogin(),
-				fmt.Sprintf("%t", repo.GetArchived()),
-				repo.GetVisibility(),
-				repo.GetPushedAt().String(),
-				repo.GetCreatedAt().String(),
-				fmt.Sprintf("%v", repo.Topics),
-				propsStr,
-				teamsStr,
-			}); err != nil {
-				log.Error().Err(err).Str("repository", repo.GetFullName()).
-					Msg("Failed to write repository report to CSV")
-				return fmt.Errorf("failed to write repository report to CSV: %w", err)
-			}
-			log.Debug().Str("repository", repo.GetFullName()).Msg("Finished processing repository")
+	// Write rows from rowChan to CSV
+	for row := range rowChan {
+		if err := w.Write(row); err != nil {
+			log.Error().Err(err).Msg("Failed to write repository report to CSV")
+			return fmt.Errorf("failed to write repository report to CSV: %w", err)
 		}
 	}
+
 	log.Debug().Msg("Completed running repository report")
 	return nil
 }
