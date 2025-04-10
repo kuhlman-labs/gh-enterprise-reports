@@ -1,8 +1,16 @@
 # gh-enterprise-reports
 
-`gh-enterprise-reports` is a GitHub CLI extension designed to generate detailed reports for GitHub Enterprise Cloud EMU environments. It supports various types of reports, including organizations, repositories, teams, collaborators, and users.
+`gh-enterprise-reports` is a GitHub CLI extension designed to generate detailed reports for GitHub Enterprise Cloud EMU environments. It supports various types of reports, including:
 
-## Features
+- **Organizations**
+- **Repositories**
+- **Teams**
+- **Collaborators**
+- **Users**
+
+---
+
+## 📋 Features
 
 - **Organizations Report**: Lists all organizations in the enterprise, their details, and memberships.
 - **Repositories Report**: Provides information about repositories, including topics, teams, and custom properties.
@@ -10,7 +18,9 @@
 - **Collaborators Report**: Lists collaborators for repositories with their permissions.
 - **Users Report**: Identifies users, their activity, and dormant status.
 
-## Prerequisites
+---
+
+## ⚙️ Prerequisites
 
 Before using this tool, ensure you have the following:
 
@@ -25,7 +35,9 @@ Before using this tool, ensure you have the following:
   - Private key file
   - Installation ID
 
-## Installation
+---
+
+## 🚀 Installation
 
 1. Clone the repository:
    ```bash
@@ -40,96 +52,108 @@ Before using this tool, ensure you have the following:
 
 3. Add the binary to your PATH or run it directly.
 
-## Usage
+---
+
+## 🛠️ Usage
 
 Run the CLI with the desired flags to generate reports. For example:
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
 
-### Flags
+### 🔧 Flags
 
-- `--auth-method`: Authentication method (`token` or `app` Defaults to `token`).
-- `--token`: Personal access token (required if `auth-method` is `token`).
-- `--app-id`: GitHub App ID (required if `auth-method` is `app`).
-- `--app-private-key-file`: Path to the GitHub App private key file (required if `auth-method` is `app`).
-- `--app-installation-id`: GitHub App installation ID (required if `auth-method` is `app`).
-- `--enterprise`: Enterprise slug (required).
-- `--organizations`: Generate the organizations report.
-- `--repositories`: Generate the repositories report.
-- `--teams`: Generate the teams report.
-- `--collaborators`: Generate the collaborators report.
-- `--users`: Generate the users report.
-- `--log-level`: Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).
+| Flag                       | Description                                                                 |
+|----------------------------|-----------------------------------------------------------------------------|
+| `--auth-method`            | Authentication method (`token` or `app`, defaults to `token`).             |
+| `--token`                  | Personal access token (required if `auth-method` is `token`).              |
+| `--app-id`                 | GitHub App ID (required if `auth-method` is `app`).                        |
+| `--app-private-key-file`   | Path to the GitHub App private key file (required if `auth-method` is `app`). |
+| `--app-installation-id`    | GitHub App installation ID (required if `auth-method` is `app`).           |
+| `--enterprise`             | Enterprise slug (required).                                                |
+| `--organizations`          | Generate the organizations report.                                         |
+| `--repositories`           | Generate the repositories report.                                          |
+| `--teams`                  | Generate the teams report.                                                 |
+| `--collaborators`          | Generate the collaborators report.                                         |
+| `--users`                  | Generate the users report.                                                 |
+| `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
 
-## Sample Output
+---
+
+## 📊 Sample Output
 
 ### Organizations Report
-Command:
+**Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
-Sample Output:
+**Sample Output:**
 ```csv
 Organization,Organization ID,Organization Default Repository Permission,Members,Total Members
 org1,MDQ6VXNlcjE=,read,{user1,MDQ6VXNlcjE=,John Doe,admin},{user2,MDQ6VXNlcjI=,Jane Smith,member},2
 ```
 
 ### Repositories Report
-Command:
+**Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
 ```
-Sample Output:
+**Sample Output:**
 ```csv
 owner,repository,archived,visibility,pushed_at,created_at,topics,custom_properties,teams
 org1,repo1,false,public,2023-01-01T12:00:00Z,2022-01-01T12:00:00Z,[topic1,topic2],{prop1:value1},{Team Name: team1, TeamID: 1, Team Slug: team1, External Group: [group1], Permission: admin}
 ```
 
 ### Teams Report
-Command:
+**Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
 ```
-Sample Output:
+**Sample Output:**
 ```csv
 Team ID,Organization,Team Name,Team Slug,External Group,Members
 1,org1,team1,team1,[group1,user-group1],[user1,user2]
 ```
 
 ### Collaborators Report
-Command:
+**Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
 ```
-Sample Output:
+**Sample Output:**
 ```csv
 Repository,Collaborators
 org1/repo1,{Login: user1, ID: 123, Permission: admin},{Login: user2, ID: 456, Permission: push}
 ```
 
 ### Users Report
-Command:
+**Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
 ```
-Sample Output:
+**Sample Output:**
 ```csv
 ID,Login,Name,Email,Last Login,Dormant?
 123,user1,John Doe,john.doe@example.com,2023-01-01T12:00:00Z,No
 456,user2,Jane Smith,jane.smith@example.com,N/A,Yes
 ```
 
-## Logging
+---
+
+## 📝 Logging
 
 Logs are written to `gh-enterprise-reports.log` in the current directory. You can adjust the log level using the `--log-level` flag.
 
-## Troubleshooting
+---
+
+## 🛠️ Troubleshooting
 
 - **Authentication Errors**: Ensure your token or GitHub App credentials are correct and have the necessary permissions.
-- **Rate Limit Exceeded**: The tool automatically waits for rate limits to reset. If this occurs frequently, consider increasing using a GitHub App.
+- **Rate Limit Exceeded**: The tool automatically waits for rate limits to reset. If this occurs frequently, consider using a GitHub App.
 
-## Contributing
+---
+
+## 🤝 Contributing
 
 We welcome contributions! To contribute:
 
@@ -137,16 +161,20 @@ We welcome contributions! To contribute:
 2. Create a new branch for your feature or bug fix.
 3. Submit a pull request with a detailed description of your changes.
 
-## Acknowledgments
+---
+
+## 📚 Acknowledgments
 
 This project uses the following libraries:
 
 - [go-github](https://github.com/google/go-github): GitHub REST API client for Go.
-- [shurkool](github.com/shurcooL/githubv4): GitHub GraphQL API client for Go.
+- [shurcooL/githubv4](https://github.com/shurcooL/githubv4): GitHub GraphQL API client for Go.
 - [cobra](https://github.com/spf13/cobra): CLI framework for Go.
 - [viper](https://github.com/spf13/viper): Configuration management for Go.
 - [zerolog](https://github.com/rs/zerolog): High-performance logging for Go.
 
-## License
+---
+
+## 📜 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
