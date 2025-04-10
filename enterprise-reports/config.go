@@ -187,7 +187,12 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	}
 	if conf.Collaborators {
 		runReport("Collaborators", func() {
-			// TODO: Add Collaborators report logic here.
+			currentTime := time.Now()
+			formattedTime := currentTime.Format("20060102150405")
+			fileName := fmt.Sprintf("%s_collaborators_report_%s.csv", conf.EnterpriseSlug, formattedTime)
+			if err := runCollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, conf, fileName); err != nil {
+				log.Error().Err(err).Msg("Failed to run Collaborators Report")
+			}
 		})
 	}
 	if conf.Users {
