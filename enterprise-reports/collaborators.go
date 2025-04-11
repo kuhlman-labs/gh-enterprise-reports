@@ -137,9 +137,9 @@ func runCollaboratorsReport(ctx context.Context, restClient *github.Client, grap
 	// Enqueue repositories into the worker pool.
 	for _, org := range orgs {
 		// Fetch repositories for the organization.
-		repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
+		repos, err := getOrganizationRepositories(ctx, restClient, org.GetLogin())
 		if err != nil {
-			log.Warn().Err(err).Str("Organization", org.Login).Msg("Skipping organization due to repository fetch error.")
+			log.Warn().Err(err).Str("Organization", org.GetLogin()).Msg("Skipping organization due to repository fetch error.")
 			continue
 		}
 

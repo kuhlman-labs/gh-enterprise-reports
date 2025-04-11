@@ -140,7 +140,7 @@ func runTeamsReport(ctx context.Context, restClient *github.Client, graphqlClien
 				teams = nil
 			}
 			orgChan <- teamResult{org: orgLogin, teams: teams}
-		}(org.Login)
+		}(org.GetLogin())
 	}
 
 	wg.Wait()

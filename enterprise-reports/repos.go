@@ -169,14 +169,14 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 	for _, org := range organizations {
 		orgCopy := org // capture local copy
 		wg.Add(1)      // add wait group for each organization
-		go func(org Organization) {
+		go func(org *github.Organization) {
 			defer wg.Done()
 			sem <- struct{}{}        // acquire semaphore
 			defer func() { <-sem }() // release semaphore
-			log.Debug().Str("organization", org.Login).Msg("Processing organization")
-			repos, err := getOrganizationRepositories(ctx, restClient, org.Login)
+			log.Debug().Str("organization", org.GetLogin()).Msg("Processing organization")
+			repos, err := getOrganizationRepositories(ctx, restClient, org.GetLogin())
 			if err != nil {
-				log.Error().Err(err).Str("organization", org.Login).Msg("Failed to get repositories")
+				log.Error().Err(err).Str("organization", org.GetLogin()).Msg("Failed to get repositories")
 				return
 			}
 			for _, repo := range repos {
@@ -270,7 +270,7 @@ func runRepositoryReport(ctx context.Context, restClient *github.Client, graphQL
 						teamsStr,
 					}
 					log.Debug().Str("repository", repo.GetFullName()).Msg("Finished processing repository")
-				}(repo, org.Login)
+				}(repo, org.GetLogin())
 			}
 		}(orgCopy) // end of organization goroutine
 	}

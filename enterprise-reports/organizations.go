@@ -13,10 +13,6 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-type Organization struct {
-	Login string
-}
-
 type Members struct {
 	Login string
 	ID    string
@@ -25,12 +21,15 @@ type Members struct {
 }
 
 // getEnterpriseOrgs retrieves all organizations for the specified enterprise.
-func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, config *Config) ([]Organization, error) {
+func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, config *Config) ([]*github.Organization, error) {
 	log.Info().Str("EnterpriseSlug", config.EnterpriseSlug).Msg("Fetching organizations for enterprise.")
 	var query struct {
 		Enterprise struct {
 			Organizations struct {
-				Nodes    []Organization
+				Nodes []struct {
+					Login string `graphql:"login"`
+					ID    string `graphql:"id"`
+				} `graphql:"nodes"`
 				PageInfo struct {
 					HasNextPage bool
 					EndCursor   githubv4.String
@@ -49,7 +48,7 @@ func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, conf
 		"cursor":         (*githubv4.String)(nil),
 	}
 
-	orgs := make([]Organization, 0, 100)
+	orgs := make([]*github.Organization, 0, 100)
 	for {
 		err := graphQLClient.Query(ctx, &query, variables)
 		if err != nil {
@@ -60,7 +59,13 @@ func getEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, conf
 			Bool("HasNextPage", query.Enterprise.Organizations.PageInfo.HasNextPage).
 			Str("EndCursor", string(query.Enterprise.Organizations.PageInfo.EndCursor)).
 			Msg("Fetched a page of organizations.")
-		orgs = append(orgs, query.Enterprise.Organizations.Nodes...)
+
+		for _, node := range query.Enterprise.Organizations.Nodes {
+			orgs = append(orgs, &github.Organization{
+				Login:  &node.Login,
+				NodeID: &node.ID,
+			})
+		}
 
 		// Check rate limit
 		if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
@@ -102,74 +107,6 @@ func writeCSVHeader(writer *csv.Writer, headers []string) error {
 	}
 	return nil
 }
-
-/*
-// getOrganizationMemberships fetches all organization memberships in the given organization using pagination.
-func getOrganizationMemberships(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, orgLogin string) ([]*github.User, error) {
-	log.Info().Str("Organization", orgLogin).Msg("Fetching organization memberships.")
-	var query struct {
-		Organization struct {
-			MembersWithRole struct {
-				Edges []struct {
-					Role string
-					Node struct {
-						Name  string
-						Login string
-						ID    string
-					}
-				}
-				PageInfo struct {
-					HasNextPage bool
-					EndCursor   githubv4.String
-				}
-			} `graphql:"membersWithRole(first: 100, after: $cursor)"`
-		} `graphql:"organization(login: $login)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
-	}
-	variables := map[string]interface{}{
-		"login":  githubv4.String(orgLogin),
-		"cursor": (*githubv4.String)(nil),
-	}
-
-	memberMap := make(map[string]*github.User)
-	for {
-		err := graphQLClient.Query(ctx, &query, variables)
-		if err != nil {
-			log.Error().Err(err).Str("Organization", orgLogin).Msg("Failed to fetch memberships.")
-			return nil, fmt.Errorf("failed to fetch memberships for organization %s: %w", orgLogin, err)
-		}
-		for _, edge := range query.Organization.MembersWithRole.Edges {
-			memberMap[edge.Node.Login] = &github.User{
-				Login:    &edge.Node.Login,
-				Name:     &edge.Node.Name,
-				NodeID:   &edge.Node.ID,
-				RoleName: &edge.Role,
-			}
-		}
-		// Check rate limit
-		if query.RateLimit.Remaining < 10 {
-			log.Warn().Int("Remaining", query.RateLimit.Remaining).Int("Limit", query.RateLimit.Limit).Msg("Rate limit low, waiting until reset")
-			waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-		}
-		// Check if there are more pages
-		if !query.Organization.MembersWithRole.PageInfo.HasNextPage {
-			break
-		}
-		variables["cursor"] = query.Organization.MembersWithRole.PageInfo.EndCursor
-	}
-	allMemberships := make([]*github.User, 0, len(memberMap))
-	for _, member := range memberMap {
-		allMemberships = append(allMemberships, member)
-	}
-	log.Info().Str("OrganizationLogin", orgLogin).Int("TotalMemberships", len(allMemberships)).Msg("Successfully fetched all memberships.")
-	return allMemberships, nil
-}
-*/
 
 // getOrganizationMemberships retrieves all organization memberships for the specified organization using the REST API.
 func getOrganizationMemberships(ctx context.Context, restClient *github.Client, orgLogin string) ([]*github.User, error) {
@@ -326,7 +263,7 @@ func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client,
 	}
 
 	// Concurrency setup
-	orgChan := make(chan Organization, len(orgs))
+	orgChan := make(chan *github.Organization, len(orgs))
 	resultChan := make(chan orgResult, len(orgs))
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit the number of concurrent workers
@@ -337,27 +274,27 @@ func runOrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client,
 		for org := range orgChan {
 			// Check for context cancellation before processing an organization.
 			if ctx.Err() != nil {
-				log.Warn().Str("Organization", org.Login).Msg("Context canceled, stopping worker.")
+				log.Warn().Str("Organization", *org.Login).Msg("Context canceled, stopping worker.")
 				return
 			}
 			semaphore <- struct{}{} // Acquire semaphore token
-			organization, err := getOrganization(ctx, restClient, org.Login)
+			organization, err := getOrganization(ctx, restClient, *org.Login)
 			<-semaphore // Release token
 			if err != nil {
-				log.Error().Err(err).Str("Organization", org.Login).Msg("Failed to fetch organization details. Marking as unavailable.")
-				resultChan <- orgResult{organization: nil, members: nil, err: fmt.Errorf("details not available for %s", org.Login)}
+				log.Error().Err(err).Str("Organization", *org.Login).Msg("Failed to fetch organization details. Marking as unavailable.")
+				resultChan <- orgResult{organization: nil, members: nil, err: fmt.Errorf("details not available for %s", *org.Login)}
 				continue
 			}
 			// Check cancellation after fetching organization details.
 			if ctx.Err() != nil {
-				log.Warn().Str("Organization", org.Login).Msg("Context canceled after fetching details, stopping worker.")
+				log.Warn().Str("Organization", *org.Login).Msg("Context canceled after fetching details, stopping worker.")
 				return
 			}
 
 			users, err := getOrganizationMemberships(ctx, restClient, organization.GetLogin())
 			if err != nil {
-				log.Error().Err(err).Str("Organization", org.Login).Msg("Failed to fetch memberships. Marking as unavailable.")
-				resultChan <- orgResult{organization: organization, members: nil, err: fmt.Errorf("memberships not available for %s", org.Login)}
+				log.Error().Err(err).Str("Organization", *org.Login).Msg("Failed to fetch memberships. Marking as unavailable.")
+				resultChan <- orgResult{organization: organization, members: nil, err: fmt.Errorf("memberships not available for %s", *org.Login)}
 				continue
 			}
 
@@ -407,14 +344,14 @@ OuterLoop:
 			totalMembers = "N/A"
 		} else {
 			orgLogin = result.organization.GetLogin()
-			orgID = result.organization.GetNodeID()
+			orgID = fmt.Sprintf("%d", result.organization.GetID())
 			defaultRepoPermission = result.organization.GetDefaultRepoPermission()
 
 			var memberDetails []string
 			for _, user := range result.members {
-				memberDetails = append(memberDetails, fmt.Sprintf("{%s,%s,%s,%s}",
+				memberDetails = append(memberDetails, fmt.Sprintf("{%s,%d,%s,%s}",
 					user.GetLogin(),
-					user.GetNodeID(),
+					user.GetID(),
 					user.GetName(),
 					user.GetRoleName(),
 				))
