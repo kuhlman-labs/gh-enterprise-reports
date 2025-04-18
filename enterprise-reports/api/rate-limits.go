@@ -1,12 +1,13 @@
-package enterprisereports
+package api
 
 import (
 	"context"
 	"fmt"
 	"time"
 
+	"log/slog"
+
 	"github.com/google/go-github/v70/github"
-	"github.com/rs/zerolog/log"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -34,7 +35,7 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 			if err == nil {
 				return rl, nil
 			}
-			log.Warn().Err(err).Msgf("Retrying rate limit check (%d/3)", i+1)
+			slog.Warn("retrying rate limit check", "error", err, "attempt", i+1)
 			time.Sleep(2 * time.Second)
 		}
 	}
@@ -43,27 +44,27 @@ func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLim
 
 // waitForLimitReset waits until the given limit resets.
 // It logs the wait duration formatted as minutes and seconds and the reset time in UTC.
-func waitForLimitReset(ctx context.Context, name string, remaining int, limit int, resetTime time.Time) {
+func waitForLimitReset(ctx context.Context, name string, remaining, limit int, resetTime time.Time) {
 	now := time.Now().UTC() // Ensure UTC
 	waitDuration := resetTime.Sub(now) + time.Second
 	if waitDuration > 0 {
-		log.Warn().
-			Str("API", name).
-			Int("Remaining", remaining).
-			Int("Limit", limit).
-			Str("WaitDuration", waitDuration.Truncate(time.Second).String()).
-			Str("ResetTime (UTC)", resetTime.Format(time.RFC3339)).
-			Msgf("%s rate limit low, waiting until reset", name)
+		slog.Warn("rate limit low, waiting until reset",
+			"api", name,
+			"remaining", remaining,
+			"limit", limit,
+			"wait_duration", waitDuration.Truncate(time.Second).String(),
+			"reset_time", resetTime.UTC().Format(time.RFC3339),
+		)
 
 		timer := time.NewTimer(waitDuration)
 		defer timer.Stop()
 
 		select {
 		case <-ctx.Done():
-			log.Info().Msgf("Context canceled, stopping wait for %s rate limit reset", name)
+			slog.Info("context canceled, stopping wait for rate limit reset", "api", name)
 			return
 		case <-timer.C:
-			log.Info().Msgf("%s rate limit reset", name)
+			slog.Info("rate limit reset", "api", name)
 			return
 		}
 	}
@@ -72,10 +73,8 @@ func waitForLimitReset(ctx context.Context, name string, remaining int, limit in
 // handleRESTRateLimit logs a warning and waits if the REST rate limit is below the threshold.
 func handleRESTRateLimit(ctx context.Context, rate github.Rate) {
 	if rate.Remaining < RESTRateLimitThreshold {
-		log.Warn().Int("remaining", rate.Remaining).
-			Int("limit", rate.Limit).
-			Msg("Rate limit low, waiting until reset")
-		waitForLimitReset(ctx, "REST", rate.Remaining, rate.Limit, rate.Reset.Time)
+		slog.Warn("rest rate limit low", "remaining", rate.Remaining, "limit", rate.Limit)
+		waitForLimitReset(ctx, "rest", rate.Remaining, rate.Limit, rate.Reset.Time)
 	}
 }
 
@@ -83,26 +82,25 @@ func handleRESTRateLimit(ctx context.Context, rate github.Rate) {
 func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	rl, err := checkRateLimit(ctx, restClient)
 	if err != nil {
-		log.Error().Err(err).Msg("Error fetching rate limits")
-		return
+		return // Error already logged in checkRateLimit
 	}
 
 	if core := rl.GetCore(); core != nil && core.Remaining < RESTRateLimitThreshold {
-		waitForLimitReset(ctx, "REST", core.Remaining, core.Limit, core.Reset.Time)
+		waitForLimitReset(ctx, "rest", core.Remaining, core.Limit, core.Reset.Time)
 	}
 
 	if gql := rl.GetGraphQL(); gql != nil && gql.Remaining < GraphQLRateLimitThreshold {
-		waitForLimitReset(ctx, "GraphQL", gql.Remaining, gql.Limit, gql.Reset.Time)
+		waitForLimitReset(ctx, "graphql", gql.Remaining, gql.Limit, gql.Reset.Time)
 	}
 
 	if audit := rl.GetAuditLog(); audit != nil && audit.Remaining < AuditLogRateLimitThreshold {
-		waitForLimitReset(ctx, "Audit Log", audit.Remaining, audit.Limit, audit.Reset.Time)
+		waitForLimitReset(ctx, "audit_log", audit.Remaining, audit.Limit, audit.Reset.Time)
 	}
 }
 
 // MonitorRateLimits periodically checks and logs REST, GraphQL, and Audit Log API rate limits.
 func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, interval time.Duration) {
-	log.Info().Dur("Interval", interval).Msg("Starting rate limit monitoring...")
+	slog.Info("starting rate limit monitoring", "interval", interval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -110,12 +108,12 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Msg("Rate limit monitoring stopped")
+			slog.Info("rate limit monitoring stopped")
 			return
 		case <-ticker.C:
 			rateLimits, err := checkRateLimit(ctx, restClient)
 			if err != nil {
-				log.Error().Err(err).Msg("Error fetching REST API rate limits")
+				slog.Warn("error fetching rest api rate limits", "error", err)
 				continue
 			}
 
@@ -123,13 +121,17 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 			gql := rateLimits.GetGraphQL()
 			audit := rateLimits.GetAuditLog()
 
-			msg := fmt.Sprintf(
-				"Rate Limits | REST: %d/%d (Reset: %s) | GraphQL: %d/%d (Reset: %s) | Audit Log: %d/%d (Reset: %s)",
-				getRemaining(core), getLimit(core), getResetTime(core),
-				getRemaining(gql), getLimit(gql), getResetTime(gql),
-				getRemaining(audit), getLimit(audit), getResetTime(audit),
+			slog.Info("rate limits",
+				"rest_remaining", getRemaining(core),
+				"rest_limit", getLimit(core),
+				"rest_reset_time", getResetTime(core),
+				"graphql_remaining", getRemaining(gql),
+				"graphql_limit", getLimit(gql),
+				"graphql_reset_time", getResetTime(gql),
+				"audit_remaining", getRemaining(audit),
+				"audit_limit", getLimit(audit),
+				"audit_reset_time", getResetTime(audit),
 			)
-			log.Info().Msg(msg)
 		}
 	}
 }

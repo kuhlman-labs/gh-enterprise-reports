@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	enterprisereports "github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
 	"github.com/spf13/cobra"
 )
 
@@ -17,20 +17,13 @@ func main() {
 	// Open log file in append mode.
 	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to open log file")
+		slog.Error("failed to open log file", "error", err)
+		os.Exit(1)
 	}
 	defer logFile.Close()
 
-	// Create a ConsoleWriter with colored output for the terminal.
-	consoleWriter := zerolog.ConsoleWriter{
-		Out:        os.Stderr,
-		TimeFormat: time.RFC3339,
-		NoColor:    false,
-	}
-
-	// Setup logger with both file and console outputs.
-	configuredLogger := zerolog.New(zerolog.MultiLevelWriter(logFile, consoleWriter)).With().Timestamp().Logger()
-	log.Logger = configuredLogger
+	// initialize slog to file+terminal at Info level
+	enterprisereports.SetupLogging(logFile, slog.LevelInfo)
 
 	// Create a new configuration object.
 	config := &enterprisereports.Config{}
@@ -44,7 +37,7 @@ func main() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
-		log.Info().Msg("Received shutdown signal, canceling context...")
+		slog.Info("received shutdown signal, canceling context")
 		cancel()
 	}()
 
@@ -56,36 +49,41 @@ func main() {
 			return config.Validate()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Set global log level for console output based on configuration.
-			level, err := zerolog.ParseLevel(config.LogLevel)
-			if err != nil {
-				log.Warn().Err(err).Msg("Invalid log level specified, defaulting to info.")
-				level = zerolog.InfoLevel
+			// Set log level from configuration.
+			var level slog.Level
+			if err := level.UnmarshalText([]byte(config.LogLevel)); err != nil {
+				slog.Warn("invalid log level specified, defaulting to info", "error", err)
+				level = slog.LevelInfo
 			}
-			zerolog.SetGlobalLevel(level)
+			// reconfigure slog to both outputs at chosen level
+			enterprisereports.SetupLogging(logFile, level)
 
 			// Create REST and GraphQL clients.
 			restClient, err := enterprisereports.NewRESTClient(ctx, config)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Error creating REST client")
+				slog.Error("creating rest client", "error", err)
+				os.Exit(1)
 			}
 			graphQLClient, err := enterprisereports.NewGraphQLClient(ctx, config)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Error creating GraphQL client")
+				slog.Error("creating graphql client", "error", err)
+				os.Exit(1)
 			}
 
-			// Log the configuration details.
-			log.Info().Msg("========================================")
-			log.Info().Str("Auth Method", config.AuthMethod).Msg("Configuration")
-			log.Info().Str("Base URL", "https://api.github.com/").Msg("Configuration")
-			log.Info().Str("Enterprise", config.EnterpriseSlug).Msg("Configuration")
-			log.Info().Msg("========================================")
+			// Log the configuration details with a standout banner.
+			slog.Info("==================================================")
+			slog.Info("configuration values",
+				"auth_method", config.AuthMethod,
+				"base_url", config.BaseURL,
+				"enterprise", config.EnterpriseSlug,
+			)
+			slog.Info("==================================================")
 
 			// Ensure rate limits are sufficient before proceeding.
-			enterprisereports.EnsureRateLimits(ctx, restClient)
+			api.EnsureRateLimits(ctx, restClient)
 
-			// Start monitoring rate limits every 15 seconds asynchronously and log the results.
-			go enterprisereports.MonitorRateLimits(ctx, restClient, graphQLClient, 30*time.Second)
+			// Start monitoring rate limits every 30 seconds asynchronously.
+			go api.MonitorRateLimits(ctx, restClient, graphQLClient, 30*time.Second)
 
 			// Run the reports.
 			enterprisereports.RunReports(ctx, config, restClient, graphQLClient)
@@ -96,6 +94,7 @@ func main() {
 	enterprisereports.InitializeFlags(rootCmd, config)
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal().Err(err).Msg("Error executing command")
+		slog.Error("executing command", "error", err)
+		os.Exit(1)
 	}
 }

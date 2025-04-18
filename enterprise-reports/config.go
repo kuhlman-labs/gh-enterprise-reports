@@ -3,17 +3,16 @@ package enterprisereports
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
+
 	"github.com/shurcooL/githubv4"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"golang.org/x/oauth2"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/reports"
 )
 
 // Config encapsulates all configuration from CLI flags and Viper.
@@ -30,6 +29,7 @@ type Config struct {
 	GithubAppInstallationID int64
 	EnterpriseSlug          string
 	LogLevel                string
+	BaseURL                 string
 }
 
 // Validate checks for required flags based on the chosen authentication method.
@@ -48,7 +48,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("app-id, app-private-key, and app-installation-id are required when using GitHub App authentication")
 		}
 	default:
-		return fmt.Errorf("unknown auth-method %q; please use 'token' or 'app'", c.AuthMethod)
+		return fmt.Errorf("unknown auth-method %q: please use 'token' or 'app'", c.AuthMethod)
 	}
 	return nil
 }
@@ -64,6 +64,9 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 
 	//Log-level flag.
 	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "info", "Set log level (debug, info, warn, error, fatal, panic)")
+
+	// Base URL flag.
+	rootCmd.Flags().StringVar(&config.BaseURL, "base-url", "https://api.github.com", "Base URL for GitHub API (optional)")
 
 	// Authentication flags.
 	rootCmd.Flags().StringVar(&config.AuthMethod, "auth-method", "token", "Authentication method: token or app")
@@ -83,61 +86,9 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 
 	// Validate the configuration file.
 	if err := viper.ReadInConfig(); err != nil {
-		log.Warn().Err(err).Msg("Failed to read config file, proceeding with defaults and environment variables.")
+		slog.Warn("failed to read config file, proceeding with defaults and environment variables", slog.Any("err", err))
 	} else {
-		log.Info().Str("Config File", viper.ConfigFileUsed()).Msg("Using config file")
-	}
-}
-
-// NewRESTClient creates a new REST client configured based on the chosen authentication method.
-func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
-	switch conf.AuthMethod {
-	case "token":
-		client := github.NewClient(nil).WithAuthToken(conf.Token)
-		return client, nil
-	case "app":
-		itr, err := ghinstallation.NewKeyFromFile(
-			http.DefaultTransport,
-			conf.GithubAppID,
-			conf.GithubAppInstallationID,
-			conf.GithubAppPrivateKey,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create installation transport: %w", err)
-		}
-		client := github.NewClient(&http.Client{Transport: itr})
-		return client, nil
-	default:
-		return nil, fmt.Errorf("unsupported auth-method %q; please use 'token' or 'app'", conf.AuthMethod)
-	}
-}
-
-// NewGraphQLClient creates a new GraphQL client configured based on the chosen authentication method.
-func NewGraphQLClient(ctx context.Context, conf *Config) (*githubv4.Client, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	switch conf.AuthMethod {
-	case "token":
-		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: conf.Token})
-		httpClient := oauth2.NewClient(ctx, src)
-		client := githubv4.NewClient(httpClient)
-		return client, nil
-	case "app":
-		itr, err := ghinstallation.NewKeyFromFile(
-			http.DefaultTransport,
-			conf.GithubAppID,
-			conf.GithubAppInstallationID,
-			conf.GithubAppPrivateKey,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create installation transport: %w", err)
-		}
-		httpClient := &http.Client{Transport: itr}
-		client := githubv4.NewClient(httpClient)
-		return client, nil
-	default:
-		return nil, fmt.Errorf("unsupported auth-method %q; please use 'token' or 'app'", conf.AuthMethod)
+		slog.Info("using config file", slog.String("configFile", viper.ConfigFileUsed()))
 	}
 }
 
@@ -145,14 +96,19 @@ func NewGraphQLClient(ctx context.Context, conf *Config) (*githubv4.Client, erro
 func RunReports(ctx context.Context, conf *Config, restClient *github.Client, graphQLClient *githubv4.Client) {
 	runReport := func(reportName string, reportFunc func()) {
 		start := time.Now()
-		log.Info().Msgf("Running %s Report...", reportName)
+		slog.Info("running report", slog.String("report", reportName))
+
 		reportFunc()
+
 		duration := time.Since(start).Round(time.Second)
 		minutes := int(duration.Minutes())
 		seconds := int(duration.Seconds()) % 60
-		log.Info().Msg("========================================")
-		log.Info().Msgf("%s Report completed in %dm %ds", reportName, minutes, seconds)
-		log.Info().Msg("========================================")
+		slog.Info("report completed",
+			slog.String("report", reportName),
+			slog.Int("minutes", minutes),
+			slog.Int("seconds", seconds),
+		)
+		slog.Info("========================================")
 	}
 
 	if conf.Organizations {
@@ -160,8 +116,8 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_organizations_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-			if err := runOrganizationsReport(ctx, graphQLClient, restClient, conf, fileName); err != nil {
-				log.Error().Err(err).Msg("Failed to run Organizations Report")
+			if err := reports.OrganizationsReport(ctx, graphQLClient, restClient, conf.EnterpriseSlug, fileName); err != nil {
+				slog.Error("failed to run organizations report", slog.Any("err", err))
 			}
 		})
 	}
@@ -170,8 +126,8 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_repositories_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-			if err := runRepositoryReport(ctx, restClient, graphQLClient, conf, fileName); err != nil {
-				log.Error().Err(err).Msg("Failed to run Repositories Report")
+			if err := reports.RepositoryReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+				slog.Error("failed to run repositories report", slog.Any("err", err))
 			}
 		})
 	}
@@ -180,8 +136,8 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_teams_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-			if err := runTeamsReport(ctx, restClient, graphQLClient, conf, fileName); err != nil {
-				log.Error().Err(err).Msg("Failed to run Teams Report")
+			if err := reports.TeamsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+				slog.Error("failed to run teams report", slog.Any("err", err))
 			}
 		})
 	}
@@ -190,8 +146,8 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_collaborators_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-			if err := runCollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, conf, fileName); err != nil {
-				log.Error().Err(err).Msg("Failed to run Collaborators Report")
+			if err := reports.CollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+				slog.Error("failed to run collaborators report", slog.Any("err", err))
 			}
 		})
 	}
@@ -200,8 +156,8 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_users_report_%s.csv", conf.EnterpriseSlug, formattedTime)
-			if err := runUsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
-				log.Error().Err(err).Msg("Failed to run Users Report")
+			if err := reports.UsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+				slog.Error("failed to run users report", slog.Any("err", err))
 			}
 		})
 	}
