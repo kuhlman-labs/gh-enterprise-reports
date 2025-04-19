@@ -177,6 +177,12 @@ ResultsLoop:
 		}
 	}
 
+	// Ensure all CSV data is written out
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("failed to flush CSV writer: %w", err)
+	}
+
 	slog.Info("teams report complete", slog.String("file", filename))
 	return nil
 }

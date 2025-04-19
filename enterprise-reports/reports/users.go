@@ -119,37 +119,12 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		}
 	}
 
+	// Ensure all CSV data is written out
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("failed to flush CSV writer: %w", err)
+	}
+
 	slog.Info("users report generated", "filename", filename)
 	return nil
-}
-
-// isDormant determines if a user is dormant by verifying events, contributions, and recent login activity.
-func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time, recentLogin bool) (bool, error) {
-	slog.Debug("checking dormant status", "user", user)
-
-	// Check for recent REST events.
-	recentEvents, err := api.HasRecentEvents(ctx, restClient, user, since)
-	if err != nil {
-		return false, fmt.Errorf("checking recent events for %q: %w", user, err)
-	}
-
-	// Check for recent contributions.
-	recentContribs, err := api.HasRecentContributions(ctx, graphQLClient, user, since)
-	if err != nil {
-		return false, fmt.Errorf("checking recent contributions for %q: %w", user, err)
-	}
-
-	// If the user has neither recent events nor contributions, the user is dormant.
-	dormant := !(recentEvents || recentContribs || recentLogin)
-
-	// report final dormant check outcome.
-	slog.Debug("dormant check result",
-		"user", user,
-		"recentEvents", recentEvents,
-		"recentContribs", recentContribs,
-		"recentLogin", recentLogin,
-		"dormant", dormant,
-	)
-
-	return dormant, nil
 }

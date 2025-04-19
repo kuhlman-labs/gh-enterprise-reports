@@ -1,10 +1,17 @@
 package reports
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/shurcooL/githubv4"
 )
 
 // getHighestPermission returns the highest permission level from the provided permissions map.
@@ -62,4 +69,35 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 		return nil, nil, fmt.Errorf("failed to write header to file %s: %w", path, err)
 	}
 	return f, w, nil
+}
+
+// isDormant determines if a user is dormant by verifying events, contributions, and recent login activity.
+func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time, recentLogin bool) (bool, error) {
+	slog.Debug("checking dormant status", "user", user)
+
+	// Check for recent REST events.
+	recentEvents, err := api.HasRecentEvents(ctx, restClient, user, since)
+	if err != nil {
+		return false, fmt.Errorf("checking recent events for %q: %w", user, err)
+	}
+
+	// Check for recent contributions.
+	recentContribs, err := api.HasRecentContributions(ctx, graphQLClient, user, since)
+	if err != nil {
+		return false, fmt.Errorf("checking recent contributions for %q: %w", user, err)
+	}
+
+	// If the user has neither recent events nor contributions, the user is dormant.
+	dormant := !(recentEvents || recentContribs || recentLogin)
+
+	// report final dormant check outcome.
+	slog.Debug("dormant check result",
+		"user", user,
+		"recentEvents", recentEvents,
+		"recentContribs", recentContribs,
+		"recentLogin", recentLogin,
+		"dormant", dormant,
+	)
+
+	return dormant, nil
 }
