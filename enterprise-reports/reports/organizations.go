@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"log/slog"
 
@@ -59,6 +60,7 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	// Use a WaitGroup to wait for all workers to finish
 	// and a semaphore to limit the number of concurrent workers
 	var wg sync.WaitGroup
+	var orgCount int64
 	semaphore := make(chan struct{}, 10) // Limit the number of concurrent workers
 
 	// Worker function to process organizations
@@ -93,7 +95,17 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 					resultChan <- orgResult{organization: organization, members: nil, err: fmt.Errorf("failed to fetch memberships for %s: %w", *org.Login, err)}
 					continue
 				}
-				resultChan <- orgResult{organization: organization, members: users}
+
+				row := orgResult{
+					organization: organization,
+					members:      users,
+				}
+
+				atomic.AddInt64(&orgCount, 1)
+				slog.Info("processing organization", "organization", *org.Login)
+
+				resultChan <- row
+
 			}
 		}
 	}
@@ -116,6 +128,7 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	// Collect results
 	go func() {
 		wg.Wait()
+		slog.Info("processing organizations complete", "total", atomic.LoadInt64(&orgCount))
 		close(resultChan)
 	}()
 

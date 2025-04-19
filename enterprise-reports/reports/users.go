@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -64,9 +65,10 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	}
 
 	// Concurrency setup
-	rowsCh := make(chan []string, len(users))
+	resultsCh := make(chan []string, len(users))
 	semaphore := make(chan struct{}, 10) // Limit concurrent requests to 10
 	var wg sync.WaitGroup
+	var userCount int64
 
 	for _, u := range users {
 		wg.Add(1)
@@ -111,18 +113,21 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 				lastLoginStr,
 				dormantStr,
 			}
-			rowsCh <- row
+			atomic.AddInt64(&userCount, 1)
+			slog.Info("processing user", "user", u.GetLogin())
+			resultsCh <- row
 		}(*u)
 	}
 
-	// Close rowsCh after all goroutines finish
+	// Close resultsCh after all goroutines finish
 	go func() {
 		wg.Wait()
-		close(rowsCh)
+		slog.Info("processing users complete", "total", atomic.LoadInt64(&userCount))
+		close(resultsCh)
 	}()
 
 	// Write CSV rows sequentially
-	for row := range rowsCh {
+	for row := range resultsCh {
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("runUsersReport: write CSV row to %q failed: %w", filename, err)
 		}

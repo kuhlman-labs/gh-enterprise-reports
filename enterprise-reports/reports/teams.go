@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"log/slog"
 
@@ -52,6 +53,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 
 	teamChan := make(chan []*github.Team, len(orgs))
 	var teamWg sync.WaitGroup
+	var teamsCount int64
 	concurrencyLimit := 10 // limit to 10 calls
 	semaphore := make(chan struct{}, concurrencyLimit)
 
@@ -115,12 +117,18 @@ MembersLoop:
 						externalGroups = nil
 					}
 
-					resultsChan <- memberGroupResult{
+					row := memberGroupResult{
 						team:           team,
 						org:            team.GetOrganization().GetLogin(),
 						members:        members,
 						externalGroups: externalGroups,
 					}
+
+					atomic.AddInt64(&teamsCount, 1)
+					slog.Info("processing team", slog.String("team", team.GetSlug()))
+
+					// Send the result to the results channel
+					resultsChan <- row
 				}(team)
 			}
 		}
@@ -129,6 +137,7 @@ MembersLoop:
 	// collect all results and then close resultsChan
 	go func() {
 		resultWg.Wait()
+		slog.Info("processing teams complete", slog.Int64("total", teamsCount))
 		close(resultsChan)
 	}()
 

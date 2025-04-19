@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"log/slog"
 
@@ -45,7 +46,9 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	const maxWorkers = 50 // Limit to 50 concurrent workers to avoid hitting secondary rate limits.
 	repoChan := make(chan *github.Repository, maxWorkers)
 	resultsChan := make(chan []string, maxWorkers)
+
 	var wg sync.WaitGroup
+	var collaboratorCount int64
 
 	// Start worker pool.
 	for i := 0; i < maxWorkers; i++ {
@@ -94,6 +97,9 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 						data = []byte("[]")
 					}
 					record := []string{repo.GetFullName(), string(data)}
+
+					atomic.AddInt64(&collaboratorCount, int64(len(infos)))
+					slog.Info("processing collaborators for repository", "repository", repo.GetFullName(), "collaborators", len(infos))
 					resultsChan <- record
 				case <-ctx.Done():
 					return
@@ -125,9 +131,9 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 		}
 	}
 
-	// Close the channel and wait for workers to finish.
 	close(repoChan)
 	wg.Wait()
+	slog.Info("processing collaborators complete", slog.Int64("total", atomic.LoadInt64(&collaboratorCount)))
 	close(resultsChan)
 
 	// Single goroutine to write CSV rows.

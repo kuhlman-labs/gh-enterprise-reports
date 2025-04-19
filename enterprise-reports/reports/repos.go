@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/go-github/v70/github"
@@ -69,6 +70,8 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 	var wg sync.WaitGroup
 	var wgWorkers sync.WaitGroup
 
+	var repoCount int64
+
 	// Start repo workers
 	for i := 0; i < maxWorkers; i++ {
 		wgWorkers.Add(1)
@@ -87,14 +90,14 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 					// Fetch teams sequentially (no unbounded goroutines)
 					teams, err := api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
 					if err != nil {
-						slog.Warn("failed to get teams", "repository", repo.GetFullName(), "error", err)
+						slog.Debug("failed to get teams", "repository", repo.GetFullName(), "error", err)
 						return
 					}
 					var collected []RepoTeam
 					for _, t := range teams {
 						externalGroups, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())
 						if err != nil {
-							slog.Warn("failed to get external groups", "repository", repo.GetFullName(), "error", err)
+							slog.Debug("failed to get external groups", "repository", repo.GetFullName(), "error", err)
 							continue
 						}
 						groupNames := make([]string, 0, len(externalGroups.Groups))
@@ -123,7 +126,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 
 					customProperties, err := api.FetchCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
 					if err != nil {
-						slog.Warn("failed to get custom properties", "repository", repo.GetFullName(), "error", err)
+						slog.Debug("failed to get custom properties", "repository", repo.GetFullName(), "error", err)
 						return
 					}
 
@@ -169,7 +172,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		return err
 	}
 
-	// Enqueue goroutines for each repository in the organization
+	// Enqueue repositories
 	for _, org := range organizations {
 		wg.Add(1)
 		go func(org *github.Organization) {
@@ -183,21 +186,23 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 			slog.Debug("processing organization", "organization", org.GetLogin())
 			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
 			if err != nil {
-				slog.Warn("failed to get repositories", "organization", org.GetLogin(), "error", err)
+				slog.Debug("failed to get repositories", "organization", org.GetLogin(), "error", err)
 				return
 			}
 			for _, repo := range repos {
 				repoChan <- repo
+				atomic.AddInt64(&repoCount, 1)
+				slog.Info("processing repository", "repository", repo.GetFullName())
 			}
 		}(org)
 	}
 
-	// Close resultsChan after all goroutines complete
 	go func() {
-		wg.Wait()          // wait for all org‐fetch goroutines
-		close(repoChan)    // signal repo workers no more repos
-		wgWorkers.Wait()   // wait for all repo workers to finish
-		close(resultsChan) // signal resultsChan no more rows
+		wg.Wait()
+		slog.Info("processing repositories complete", slog.Int64("total", atomic.LoadInt64(&repoCount)))
+		close(repoChan)
+		wgWorkers.Wait()
+		close(resultsChan)
 	}()
 
 	// Write rows from resultsChan to CSV
