@@ -3,9 +3,9 @@ package reports
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"log/slog"
@@ -15,59 +15,32 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-type Members struct {
-	Login string
-	ID    string
-	Name  string
-	Type  string
-}
-
-// writeCSVHeader writes the header row to the CSV file.
-func writeCSVHeader(writer *csv.Writer, headers []string) error {
-	if err := writer.Write(headers); err != nil {
-		return fmt.Errorf("failed to write CSV header: %w", err)
-	}
-	return nil
-}
-
 // runOrganizationsReport generates a CSV report for all enterprise organizations, including organization details and memberships.
 func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, enterpriseSlug, filename string) error {
+	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
-	slog.Info("Starting organizations report generation", "filename", filename)
-
-	// Create and open the CSV file
+	// Create CSV file to write the report
 	file, err := os.Create(filename)
 	if err != nil {
-		slog.Error("Failed to create report file", "filename", filename, "err", err)
-		return fmt.Errorf("failed to create report file: %w", err)
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			slog.Error("Failed to close report file", "filename", filename, "err", err)
-		}
-	}()
+	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	defer func() {
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			slog.Warn("Failed to flush CSV writer", "err", err)
-		}
-	}()
+	defer writer.Flush()
 
-	// Write CSV header
-	if err := writeCSVHeader(writer, []string{
+	header := []string{
 		"Organization",
 		"Organization ID",
 		"Organization Default Repository Permission",
 		"Members",
 		"Total Members",
-	}); err != nil {
-		slog.Error("Failed to write CSV header", "err", err)
-		return err
+	}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write header to file: %w", err)
 	}
 
-	// Fetch organizations
+	// Fetch all enterprise organizations
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
@@ -79,50 +52,55 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 		err          error
 	}
 
-	// Concurrency setup
+	// Channels for organization processing
 	orgChan := make(chan *github.Organization, len(orgs))
 	resultChan := make(chan orgResult, len(orgs))
+
+	// Use a WaitGroup to wait for all workers to finish
+	// and a semaphore to limit the number of concurrent workers
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Limit the number of concurrent workers
 
-	// Start worker function with context cancellation checks
+	// Worker function to process organizations
 	worker := func() {
 		defer wg.Done()
-		for org := range orgChan {
-			// Check for context cancellation before processing an organization.
-			if ctx.Err() != nil {
-				slog.Warn("Context canceled, stopping worker", "organization", *org.Login)
+		for {
+			select {
+			case <-ctx.Done():
+				slog.Warn("Context canceled, stopping worker")
 				return
+			case org, ok := <-orgChan:
+				if !ok {
+					// all work dispatched
+					return
+				}
+				semaphore <- struct{}{} // Acquire semaphore token
+				organization, err := api.FetchOrganization(ctx, restClient, *org.Login)
+				<-semaphore // Release token
+				if err != nil {
+					slog.Warn("Failed to fetch organization details; marking as unavailable", "organization", *org.Login, "err", err)
+					resultChan <- orgResult{organization: nil, members: nil, err: fmt.Errorf("failed to fetch organization details for %s: %w", *org.Login, err)}
+					continue
+				}
+				// Check cancellation after fetching details.
+				if ctx.Err() != nil {
+					slog.Warn("Context canceled after fetching details, stopping worker", "organization", *org.Login)
+					return
+				}
+				users, err := api.FetchOrganizationMemberships(ctx, restClient, organization.GetLogin())
+				if err != nil {
+					slog.Warn("Failed to fetch memberships; marking as unavailable", "organization", *org.Login, "err", err)
+					resultChan <- orgResult{organization: organization, members: nil, err: fmt.Errorf("failed to fetch memberships for %s: %w", *org.Login, err)}
+					continue
+				}
+				resultChan <- orgResult{organization: organization, members: users}
 			}
-			semaphore <- struct{}{} // Acquire semaphore token
-			organization, err := api.FetchOrganization(ctx, restClient, *org.Login)
-			<-semaphore // Release token
-			if err != nil {
-				slog.Warn("Failed to fetch organization details; marking as unavailable", "organization", *org.Login, "err", err)
-				resultChan <- orgResult{organization: nil, members: nil, err: fmt.Errorf("failed to fetch organization details for %s: %w", *org.Login, err)}
-				continue
-			}
-			// Check cancellation after fetching organization details.
-			if ctx.Err() != nil {
-				slog.Warn("Context canceled after fetching details, stopping worker", "organization", *org.Login)
-				return
-			}
-
-			users, err := api.FetchOrganizationMemberships(ctx, restClient, organization.GetLogin())
-			if err != nil {
-				slog.Warn("Failed to fetch memberships; marking as unavailable", "organization", *org.Login, "err", err)
-				resultChan <- orgResult{organization: organization, members: nil, err: fmt.Errorf("failed to fetch memberships for %s: %w", *org.Login, err)}
-				continue
-			}
-
-			resultChan <- orgResult{organization: organization, members: users}
 		}
 	}
 
 	// Start workers
 	numWorkers := 5
-	workerIDs := make([]int, numWorkers)
-	for range workerIDs {
+	for range numWorkers {
 		wg.Add(1)
 		go worker()
 	}
@@ -141,61 +119,76 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 		close(resultChan)
 	}()
 
-OuterLoop:
-	for result := range resultChan {
+ResultsLoop:
+	for {
 		select {
 		case <-ctx.Done():
-			slog.Warn("Context canceled, stopping result processing")
-			break OuterLoop
-		default:
-		}
-
-		var orgLogin, orgID, defaultRepoPermission, membersString, totalMembers string
-
-		if result.err != nil {
-			slog.Warn("Error processing organization. Writing placeholder information", "err", result.err)
-			orgLogin = result.err.Error()
-			orgID = "N/A"
-			defaultRepoPermission = "N/A"
-			membersString = "N/A"
-			totalMembers = "N/A"
-		} else {
-			orgLogin = result.organization.GetLogin()
-			orgID = fmt.Sprintf("%d", result.organization.GetID())
-			defaultRepoPermission = result.organization.GetDefaultRepoPermission()
-
-			var memberDetails []string
-			for _, user := range result.members {
-				memberDetails = append(memberDetails, fmt.Sprintf("{%s,%d,%s,%s}",
-					user.GetLogin(),
-					user.GetID(),
-					user.GetName(),
-					user.GetRoleName(),
-				))
+			slog.Warn("context canceled, stopping results processing")
+			return fmt.Errorf("context canceled while writing csv: %w", ctx.Err())
+		case result, ok := <-resultChan:
+			if !ok {
+				slog.Debug("all records processed, closing CSV writer")
+				break ResultsLoop
 			}
-			membersString = strings.Join(memberDetails, ",")
-			totalMembers = fmt.Sprintf("%d", len(result.members))
-		}
 
-		if err := writer.Write([]string{
-			orgLogin,
-			orgID,
-			defaultRepoPermission,
-			membersString,
-			totalMembers,
-		}); err != nil {
-			slog.Warn("Failed to write organization to report; skipping", "organization", orgLogin, "err", err)
-			continue
+			var orgLogin, orgID, defaultRepoPermission, membersString, totalMembers string
+
+			if result.err != nil {
+				slog.Warn("Error processing organization. Writing placeholder information", "err", result.err)
+				orgLogin = result.err.Error()
+				orgID = "N/A"
+				defaultRepoPermission = "N/A"
+				membersString = "N/A"
+				totalMembers = "N/A"
+			} else {
+				orgLogin = result.organization.GetLogin()
+				orgID = fmt.Sprintf("%d", result.organization.GetID())
+				defaultRepoPermission = result.organization.GetDefaultRepoPermission()
+
+				// build JSON-encoded member list
+				var members []struct {
+					Login    string `json:"login"`
+					ID       int64  `json:"id"`
+					Name     string `json:"name"`
+					RoleName string `json:"roleName"`
+				}
+				for _, user := range result.members {
+					members = append(members, struct {
+						Login    string `json:"login"`
+						ID       int64  `json:"id"`
+						Name     string `json:"name"`
+						RoleName string `json:"roleName"`
+					}{
+						Login:    user.GetLogin(),
+						ID:       user.GetID(),
+						Name:     user.GetName(),
+						RoleName: user.GetRoleName(),
+					})
+				}
+				data, err := json.Marshal(members)
+				if err != nil {
+					slog.Warn("Failed to marshal members to JSON", "err", err)
+					membersString = "[]"
+				} else {
+					membersString = string(data)
+				}
+				totalMembers = fmt.Sprintf("%d", len(result.members))
+			}
+
+			if err := writer.Write([]string{
+				orgLogin,
+				orgID,
+				defaultRepoPermission,
+				membersString,
+				totalMembers,
+			}); err != nil {
+				slog.Warn("failed to write organization to report; skipping", "organization", orgLogin, "err", err)
+				continue
+			}
+			slog.Debug("processed organization", "organization", orgLogin)
 		}
-		slog.Debug("Successfully processed organization", "organization", orgLogin)
 	}
 
-	// Check for context timeout
-	if ctx.Err() == context.DeadlineExceeded {
-		slog.Error("Context deadline exceeded while generating organizations report", "err", ctx.Err())
-		return ctx.Err()
-	}
-
-	slog.Info("Organizations report generated successfully", "filename", filename)
+	slog.Info("organizations report complete", slog.String("filename", filename))
 	return nil
 }

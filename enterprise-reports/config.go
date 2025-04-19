@@ -17,23 +17,24 @@ import (
 
 // Config encapsulates all configuration from CLI flags and Viper.
 type Config struct {
-	Organizations           bool
-	Repositories            bool
-	Teams                   bool
-	Collaborators           bool
-	Users                   bool
-	AuthMethod              string
-	Token                   string
-	GithubAppID             int64
-	GithubAppPrivateKey     string
-	GithubAppInstallationID int64
-	EnterpriseSlug          string
-	LogLevel                string
-	BaseURL                 string
+	Organizations           bool   `mapstructure:"organizations"`
+	Repositories            bool   `mapstructure:"repositories"`
+	Teams                   bool   `mapstructure:"teams"`
+	Collaborators           bool   `mapstructure:"collaborators"`
+	Users                   bool   `mapstructure:"users"`
+	AuthMethod              string `mapstructure:"auth-method"`
+	Token                   string `mapstructure:"token"`
+	GithubAppID             int64  `mapstructure:"app-id"`
+	GithubAppPrivateKey     string `mapstructure:"app-private-key-file"`
+	GithubAppInstallationID int64  `mapstructure:"app-installation-id"`
+	EnterpriseSlug          string `mapstructure:"enterprise"`
+	LogLevel                string `mapstructure:"log-level"`
+	BaseURL                 string `mapstructure:"base-url"`
 }
 
 // Validate checks for required flags based on the chosen authentication method.
 func (c *Config) Validate() error {
+
 	if c.EnterpriseSlug == "" {
 		return fmt.Errorf("enterprise flag is required")
 	}
@@ -89,7 +90,12 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 		slog.Warn("failed to read config file, proceeding with defaults and environment variables", slog.Any("err", err))
 	} else {
 		slog.Info("using config file", slog.String("configFile", viper.ConfigFileUsed()))
+		// Read the config file and bind it to the config struct.
+		if err := viper.Unmarshal(config); err != nil {
+			slog.Error("failed to unmarshal config file", slog.Any("err", err))
+		}
 	}
+
 }
 
 // RunReports executes the selected report logic.
@@ -112,7 +118,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	}
 
 	if conf.Organizations {
-		runReport("Organizations", func() {
+		runReport("organizations", func() {
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_organizations_report_%s.csv", conf.EnterpriseSlug, formattedTime)
@@ -122,7 +128,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		})
 	}
 	if conf.Repositories {
-		runReport("Repositories", func() {
+		runReport("repositories", func() {
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_repositories_report_%s.csv", conf.EnterpriseSlug, formattedTime)
@@ -132,7 +138,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		})
 	}
 	if conf.Teams {
-		runReport("Teams", func() {
+		runReport("teams", func() {
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_teams_report_%s.csv", conf.EnterpriseSlug, formattedTime)
@@ -142,7 +148,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		})
 	}
 	if conf.Collaborators {
-		runReport("Collaborators", func() {
+		runReport("collaborators", func() {
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_collaborators_report_%s.csv", conf.EnterpriseSlug, formattedTime)
@@ -152,7 +158,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		})
 	}
 	if conf.Users {
-		runReport("Users", func() {
+		runReport("users", func() {
 			currentTime := time.Now()
 			formattedTime := currentTime.Format("20060102150405")
 			fileName := fmt.Sprintf("%s_users_report_%s.csv", conf.EnterpriseSlug, formattedTime)

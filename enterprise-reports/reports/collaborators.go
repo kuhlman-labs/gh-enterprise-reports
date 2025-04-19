@@ -3,9 +3,9 @@ package reports
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"log/slog"
@@ -17,24 +17,22 @@ import (
 
 // runCollaboratorsReport generates a CSV report of repository collaborators for the specified enterprise.
 // The report includes repository full name and collaborator details (login, ID, and highest permission level).
-func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, fileName string) error {
-	slog.Info("starting collaborators report generation", slog.String("enterprise", enterpriseSlug))
+func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string) error {
+	slog.Info("starting collaborators report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
-	// Create CSV file for report.
-	file, err := os.Create(fileName)
+	// Create CSV file to write the report
+	file, err := os.Create(filename)
 	if err != nil {
-		slog.Error("failed to create csv file", slog.String("filename", fileName), slog.Any("err", err))
-		return fmt.Errorf("failed to create csv file: %w", err)
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write CSV header row.
 	header := []string{"Repository", "Collaborators"}
 	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write csv header: %w", err)
+		return fmt.Errorf("failed to write header to file: %w", err)
 	}
 
 	// Fetch all enterprise organizations.
@@ -46,50 +44,67 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	// Create a worker pool.
 	const maxWorkers = 50 // Limit to 50 concurrent workers to avoid hitting secondary rate limits.
 	repoChan := make(chan *github.Repository, maxWorkers)
+	resultsChan := make(chan []string, maxWorkers)
 	var wg sync.WaitGroup
-	var mu sync.Mutex // Protects CSV writer.
 
 	// Start worker pool.
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for repo := range repoChan {
-				// Fetch collaborators for repository.
-				collaborators, err := api.FetchRepoCollaborators(ctx, restClient, repo)
-				if err != nil {
-					slog.Warn("skipping repository due to collaborator fetch error",
-						slog.String("repository", repo.GetFullName()),
-						slog.Any("err", err),
-					)
-					continue
-				}
+			for {
+				select {
+				case repo, ok := <-repoChan:
+					if !ok {
+						return
+					}
+					// Fetch collaborators for repository.
+					collaborators, err := api.FetchRepoCollaborators(ctx, restClient, repo)
+					if err != nil {
+						slog.Warn("skipping repository due to collaborator fetch error",
+							slog.String("repository", repo.GetFullName()),
+							slog.Any("err", err),
+						)
+						continue
+					}
 
-				// Format collaborators into a string.
-				var collaboratorStrings []string
-				for _, collaborator := range collaborators {
-					highestPermission := getHighestPermission(collaborator.GetPermissions())
-					collaboratorStrings = append(collaboratorStrings, fmt.Sprintf("{Login: %s, ID: %d, Permission: %s}", collaborator.GetLogin(), collaborator.GetID(), highestPermission))
+					// build JSON-encoded collaborator list
+					var infos []struct {
+						Login      string `json:"login"`
+						ID         int64  `json:"id"`
+						Permission string `json:"permission"`
+					}
+					for _, c := range collaborators {
+						infos = append(infos, struct {
+							Login      string `json:"login"`
+							ID         int64  `json:"id"`
+							Permission string `json:"permission"`
+						}{
+							Login:      c.GetLogin(),
+							ID:         c.GetID(),
+							Permission: getHighestPermission(c.GetPermissions()),
+						})
+					}
+					data, err := json.Marshal(infos)
+					if err != nil {
+						slog.Warn("failed to marshal collaborators to JSON",
+							slog.String("repository", repo.GetFullName()),
+							slog.Any("err", err),
+						)
+						data = []byte("[]")
+					}
+					record := []string{repo.GetFullName(), string(data)}
+					resultsChan <- record
+				case <-ctx.Done():
+					return
 				}
-				collaboratorString := strings.Join(collaboratorStrings, ", ")
-
-				// Write repository and collaborators to CSV.
-				mu.Lock()
-				if err := writer.Write([]string{repo.GetFullName(), collaboratorString}); err != nil {
-					slog.Error("failed to write collaborators to csv",
-						slog.String("repository", repo.GetFullName()),
-						slog.Any("err", err),
-					)
-				} else {
-					slog.Info("collaborators written to csv", slog.String("repository", repo.GetFullName()))
-				}
-				mu.Unlock()
 			}
 		}()
 	}
 
 	// Enqueue repositories into the worker pool.
 	for _, org := range orgs {
+		slog.Debug("processing organization", slog.String("organization", org.GetLogin()))
 		// Fetch repositories for the organization.
 		repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
 		if err != nil {
@@ -101,38 +116,43 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 		}
 
 		for _, repo := range repos {
-			repoChan <- repo
+			slog.Debug("processing repository", slog.String("repository", repo.GetFullName()))
+			select {
+			case repoChan <- repo:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 
 	// Close the channel and wait for workers to finish.
 	close(repoChan)
 	wg.Wait()
+	close(resultsChan)
 
-	// Check for CSV writer errors.
-	if err := writer.Error(); err != nil {
-		slog.Error("error writing to csv file", slog.Any("err", err))
-		return fmt.Errorf("error writing to csv file: %w", err)
+	// Single goroutine to write CSV rows.
+ResultsLoop:
+	for {
+		select {
+		case record, ok := <-resultsChan:
+			if !ok {
+				slog.Debug("all records processed, closing CSV writer")
+				break ResultsLoop
+			}
+			if err := writer.Write(record); err != nil {
+				slog.Error("failed to write collaborators to csv",
+					slog.String("repository", record[0]),
+					slog.Any("err", err),
+				)
+			} else {
+				slog.Debug("collaborators written to csv", slog.String("repository", record[0]))
+			}
+		case <-ctx.Done():
+			slog.Warn("context cancelled, stopping results processing", slog.Any("err", ctx.Err()))
+			return fmt.Errorf("context cancelled while writing csv: %w", ctx.Err())
+		}
 	}
 
-	slog.Info("collaborators report generated successfully", slog.String("filename", fileName))
+	slog.Info("collaborators report complete", slog.String("filename", filename))
 	return nil
-}
-
-// getHighestPermission returns the highest permission level from the provided permissions map.
-func getHighestPermission(permissions map[string]bool) string {
-	switch {
-	case permissions["admin"]:
-		return "admin"
-	case permissions["maintain"]:
-		return "maintain"
-	case permissions["push"]:
-		return "push"
-	case permissions["triage"]:
-		return "triage"
-	case permissions["pull"]:
-		return "pull"
-	default:
-		return "none"
-	}
 }

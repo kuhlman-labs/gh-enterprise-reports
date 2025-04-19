@@ -3,11 +3,13 @@ package reports
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
@@ -24,121 +26,99 @@ type RepoTeam struct {
 
 // runRepositoryReport generates a CSV report for repositories, including repository details, teams, and custom properties.
 func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string) error {
-	slog.Info("starting repository report", "filename", filename)
+	slog.Info("starting repository report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
-	// Create and open the CSV file
-	f, err := os.Create(filename)
+	// Create CSV file to write the report
+	file, err := os.Create(filename)
 	if err != nil {
-		slog.Error("failed to create report file", "filename", filename, "error", err)
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-	defer f.Close()
+	defer file.Close()
 
-	// Create a new CSV writer
-	w := csv.NewWriter(f)
-	defer w.Flush()
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
 
-	// Write the CSV header
-	if err := w.Write([]string{
-		"owner",
-		"repository",
-		"archived",
-		"visibility",
-		"pushed_at",
-		"created_at",
-		"topics",
-		"custom_properties",
-		"teams",
-	}); err != nil {
-		slog.Error("failed to write CSV header", "error", err)
-		return fmt.Errorf("failed to write CSV header: %w", err)
+	// Write CSV header
+	header := []string{
+		"Owner",
+		"Repository",
+		"Archived",
+		"Visibility",
+		"Pushed_At",
+		"Created_At",
+		"Topics",
+		"Custom_Properties",
+		"Teams",
 	}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write header to file: %w", err)
+	}
+
+	// Set up concurrency limits
+	maxWorkers := 5
+	resultBufferSize := 100
 
 	// Create a channel for CSV rows
-	rowChan := make(chan []string)
-	// Create a concurrency limiter for up to 5 concurrent requests
-	sem := make(chan struct{}, 5)
+	resultsChan := make(chan []string, resultBufferSize)
+	repoChan := make(chan *github.Repository)
+
+	// Semaphore channels for limiting concurrency
+	semOrg := make(chan struct{}, maxWorkers)  // for org‐fetch
+	semRepo := make(chan struct{}, maxWorkers) // for repo‐processing
+	// WaitGroup for goroutines
 	var wg sync.WaitGroup
+	var wgWorkers sync.WaitGroup
 
-	// Get Enterprise Organizations
-	organizations, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
-	if err != nil {
-		return err
-	}
-
-	// Process each organization
-	for _, org := range organizations {
-		orgCopy := org // capture local copy
-		wg.Add(1)      // add wait group for each organization
-		go func(org *github.Organization) {
-			defer wg.Done()
-			sem <- struct{}{}        // acquire semaphore
-			defer func() { <-sem }() // release semaphore
-			slog.Debug("processing organization", "organization", org.GetLogin())
-			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
-			if err != nil {
-				slog.Warn("failed to get repositories", "organization", org.GetLogin(), "error", err)
-				return
-			}
-			for _, repo := range repos {
-				wg.Add(1) // add wait group for each repository
-				go func(repo *github.Repository, orgLogin string) {
-					defer wg.Done()
-					sem <- struct{}{}        // acquire semaphore
-					defer func() { <-sem }() // release semaphore
-
+	// Start repo workers
+	for i := 0; i < maxWorkers; i++ {
+		wgWorkers.Add(1)
+		go func() {
+			defer wgWorkers.Done()
+			for repo := range repoChan {
+				select {
+				case <-ctx.Done():
+					slog.Warn("context cancelled, stopping repository processing")
+					return
+				case semRepo <- struct{}{}: // acquire repo token
+				}
+				func(repo *github.Repository) {
+					defer func() { <-semRepo }() // release repo token
 					slog.Debug("processing repository", "repository", repo.GetFullName())
-					// Process teams for the repository
-					repoTeams := []RepoTeam{}
-					var teamsMu sync.Mutex
-					var teamWg sync.WaitGroup // local wait group for teams
-
+					// Fetch teams sequentially (no unbounded goroutines)
 					teams, err := api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
 					if err != nil {
 						slog.Warn("failed to get teams", "repository", repo.GetFullName(), "error", err)
 						return
 					}
-					for _, team := range teams {
-						teamWg.Add(1)
-						go func(t *github.Team) {
-							defer teamWg.Done()
-							externalGroups, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())
-							if err != nil {
-								slog.Warn("failed to get external groups", "repository", repo.GetFullName(), "error", err)
-								return
-							}
-							groupNames := []string{}
-							for _, eg := range externalGroups.Groups {
-								groupNames = append(groupNames, *eg.GroupName)
-							}
-							repoTeam := RepoTeam{
-								TeamID:        t.GetID(),
-								TeamName:      t.GetName(),
-								TeamSlug:      t.GetSlug(),
-								ExternalGroup: groupNames,
-								Permission:    t.GetPermission(),
-							}
-							teamsMu.Lock()
-							repoTeams = append(repoTeams, repoTeam)
-							teamsMu.Unlock()
-						}(team)
-					}
-					teamWg.Wait() // wait for all team goroutines to complete
-
-					var teamsFormatted []string
-					for _, t := range repoTeams {
-						externalGroupsStr := ""
-						if len(t.ExternalGroup) > 0 {
-							externalGroupsStr = fmt.Sprintf("%s", t.ExternalGroup)
-						} else {
-							externalGroupsStr = "N/A"
+					var collected []RepoTeam
+					for _, t := range teams {
+						externalGroups, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())
+						if err != nil {
+							slog.Warn("failed to get external groups", "repository", repo.GetFullName(), "error", err)
+							continue
 						}
-						teamsFormatted = append(teamsFormatted, fmt.Sprintf("(Team Name: %s, TeamID: %d, Team Slug: %s, External Group: %s, Permission: %s)",
-							t.TeamName, t.TeamID, t.TeamSlug, externalGroupsStr, t.Permission))
+						groupNames := make([]string, 0, len(externalGroups.Groups))
+						for _, eg := range externalGroups.Groups {
+							groupNames = append(groupNames, *eg.GroupName)
+						}
+						collected = append(collected, RepoTeam{
+							TeamID:        t.GetID(),
+							TeamName:      t.GetName(),
+							TeamSlug:      t.GetSlug(),
+							ExternalGroup: groupNames,
+							Permission:    t.GetPermission(),
+						})
 					}
-					teamsStr := "N/A"
-					if len(teamsFormatted) > 0 {
-						teamsStr = fmt.Sprintf("%s", teamsFormatted)
+					// Sort for deterministic JSON order
+					sort.Slice(collected, func(i, j int) bool {
+						return collected[i].TeamSlug < collected[j].TeamSlug
+					})
+					teamsJSON, err := json.Marshal(collected)
+					teamsStr := "[]"
+					if err == nil {
+						teamsStr = string(teamsJSON)
+					} else {
+						slog.Warn("failed to marshal teams to JSON", "error", err)
 					}
 
 					customProperties, err := api.FetchCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
@@ -146,50 +126,98 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 						slog.Warn("failed to get custom properties", "repository", repo.GetFullName(), "error", err)
 						return
 					}
-					var propsFormatted []string
-					for _, property := range customProperties {
-						value := ""
-						if property.Value != nil {
-							value = fmt.Sprintf("%v", property.Value)
-						}
-						propName := ""
-						if property.PropertyName != "" {
-							propName = property.PropertyName
-						}
-						propsFormatted = append(propsFormatted, fmt.Sprintf("{%s: %s}", propName, value))
+
+					propsStr := ""
+
+					// JSON-encode custom properties
+					propsJSON, err := json.Marshal(customProperties)
+					if err != nil {
+						slog.Warn("failed to marshal custom properties to JSON", "error", err)
+						propsStr = "[]"
+					} else {
+						propsStr = string(propsJSON)
 					}
-					propsStr := "(" + strings.Join(propsFormatted, ",") + ")"
-					rowChan <- []string{
+
+					row := []string{
 						repo.GetOwner().GetLogin(),
 						repo.GetName(),
 						fmt.Sprintf("%t", repo.GetArchived()),
 						repo.GetVisibility(),
-						repo.GetPushedAt().String(),
-						repo.GetCreatedAt().String(),
+						repo.GetPushedAt().Format(time.RFC3339),
+						repo.GetCreatedAt().Format(time.RFC3339),
 						fmt.Sprintf("%v", repo.Topics),
 						propsStr,
 						teamsStr,
 					}
+
+					// Send the row (abort on cancellation)
+					select {
+					case resultsChan <- row:
+					case <-ctx.Done():
+						return
+					}
+
 					slog.Debug("finished processing repository", "repository", repo.GetFullName())
-				}(repo, org.GetLogin())
+				}(repo)
 			}
-		}(orgCopy) // end of organization goroutine
+		}()
 	}
 
-	// Close rowChan after all goroutines complete
+	// Get Enterprise Organizations
+	organizations, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
+	if err != nil {
+		return err
+	}
+
+	// Enqueue goroutines for each repository in the organization
+	for _, org := range organizations {
+		wg.Add(1)
+		go func(org *github.Organization) {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case semOrg <- struct{}{}: // acquire org token
+			}
+			defer func() { <-semOrg }() // release org token
+			slog.Debug("processing organization", "organization", org.GetLogin())
+			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Warn("failed to get repositories", "organization", org.GetLogin(), "error", err)
+				return
+			}
+			for _, repo := range repos {
+				repoChan <- repo
+			}
+		}(org)
+	}
+
+	// Close resultsChan after all goroutines complete
 	go func() {
-		wg.Wait()
-		close(rowChan)
+		wg.Wait()          // wait for all org‐fetch goroutines
+		close(repoChan)    // signal repo workers no more repos
+		wgWorkers.Wait()   // wait for all repo workers to finish
+		close(resultsChan) // signal resultsChan no more rows
 	}()
 
-	// Write rows from rowChan to CSV
-	for row := range rowChan {
-		if err := w.Write(row); err != nil {
-			slog.Error("failed to write repository report to CSV", "error", err)
-			return fmt.Errorf("failed to write repository report to CSV: %w", err)
+	// Write rows from resultsChan to CSV
+ResultsLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Warn("context cancelled, stopping results processing")
+			return fmt.Errorf("context cancelled while writing csv: %w", ctx.Err())
+		case row, ok := <-resultsChan:
+			if !ok {
+				slog.Debug("all records processed, closing CSV writer")
+				break ResultsLoop
+			}
+			if err := writer.Write(row); err != nil {
+				return fmt.Errorf("failed to write repository report to CSV: %w", err)
+			}
 		}
 	}
 
-	slog.Debug("completed running repository report")
+	slog.Info("repository report complete", slog.String("filename", filename))
 	return nil
 }

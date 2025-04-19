@@ -72,9 +72,9 @@ func main() {
 
 			// Log the configuration details with a standout banner.
 			slog.Info("==================================================")
-			slog.Info("configuration values",
-				"auth_method", config.AuthMethod,
-				"base_url", config.BaseURL,
+			slog.Info("configuration values\n",
+				"auth_method\n", config.AuthMethod,
+				"base_url\n", config.BaseURL,
 				"enterprise", config.EnterpriseSlug,
 			)
 			slog.Info("==================================================")

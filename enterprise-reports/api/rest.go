@@ -236,7 +236,6 @@ func FetchExternalGroups(ctx context.Context, restClient *github.Client, owner, 
 
 	externalGroups, resp, err := restClient.Teams.ListExternalGroupsForTeamBySlug(ctx, owner, teamSlug)
 	if err != nil {
-		slog.Error("get external groups failed", "error", err, "teamSlug", teamSlug)
 		return nil, fmt.Errorf("get external groups for team %q/%q: %w", owner, teamSlug, err)
 	}
 	slog.Debug("fetched external groups", "external_groups_count", len(externalGroups.Groups))
@@ -263,7 +262,7 @@ func FetchCustomProperties(ctx context.Context, restClient *github.Client, owner
 	return customProperties, nil
 }
 
-// FetchOrganizationMemberships retrieves all organization memberships for the specified organization using the REST API.
+// FetchOrganizationMemberships retrieves all organization members with roles for the specified organization using the REST API.
 func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client, orgLogin string) ([]*github.User, error) {
 	slog.Info("fetching organization memberships", "organization", orgLogin)
 
@@ -305,15 +304,7 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 			return nil, fmt.Errorf("fetch user details for %q failed: %w", member.GetLogin(), err)
 		}
 
-		user, err := FetchUserById(ctx, restClient, member.GetID())
-		if err != nil {
-			return nil, fmt.Errorf("fetch user by id %d failed: %w", member.GetID(), err)
-		}
-
 		member := &github.User{
-			Login:    user.Login,
-			Name:     user.Name,
-			NodeID:   user.NodeID,
 			RoleName: memberRole.Role,
 		}
 

@@ -35,3 +35,6 @@ gh-enterprise-reports
 
 # MacOS
 .DS_Store
+
+# config files
+config.yml
