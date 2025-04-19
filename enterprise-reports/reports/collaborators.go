@@ -2,10 +2,8 @@ package reports
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -22,19 +20,14 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	slog.Info("starting collaborators report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
 	// Create CSV file to write the report
-	file, err := os.Create(filename)
+	header := []string{"Repository", "Collaborators"}
+
+	file, writer, err := createCSVFileWithHeader(filename, header)
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
+
 	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	header := []string{"Repository", "Collaborators"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write header to file: %w", err)
-	}
 
 	// Fetch all enterprise organizations.
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)

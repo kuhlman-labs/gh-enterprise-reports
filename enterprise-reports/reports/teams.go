@@ -2,9 +2,7 @@ package reports
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,20 +16,10 @@ import (
 
 // TeamsReport generates a CSV report of teams for the specified Enterprise.
 // It includes columns for Team ID, Organization, Team Name, Team Slug, External Group, and Members.
-func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, fileName string) error {
-	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("file", fileName))
+func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string) error {
+	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("file", filename))
 
 	// Create CSV file to write the report
-	file, err := os.Create(fileName)
-	if err != nil {
-		return fmt.Errorf("failed to create file %s: %w", fileName, err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// Write the CSV header
 	header := []string{
 		"Team ID",
 		"Organization",
@@ -40,10 +28,13 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		"External Group",
 		"Members",
 	}
-	err = writer.Write(header)
+
+	file, writer, err := createCSVFileWithHeader(filename, header)
 	if err != nil {
-		return fmt.Errorf("failed to write header to file %s: %w", fileName, err)
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
+
+	defer file.Close()
 
 	// Get all organizations in the enterprise
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
@@ -186,6 +177,6 @@ ResultsLoop:
 		}
 	}
 
-	slog.Info("teams report complete", slog.String("file", fileName))
+	slog.Info("teams report complete", slog.String("file", filename))
 	return nil
 }

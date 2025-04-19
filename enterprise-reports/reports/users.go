@@ -2,9 +2,7 @@ package reports
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,36 +16,24 @@ import (
 
 // UsersReport creates a CSV report containing enterprise user details, including email and dormant status.
 func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string) error {
-	// Standardize context timeout and logging for report generation
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
 	slog.Info("starting users report", "filename", filename)
 
-	// Create and open the CSV file
-	f, err := os.Create(filename)
+	// Create CSV file to write the report
+	header := []string{
+		"ID",
+		"Login",
+		"Name",
+		"Email",
+		"Last Login",
+		"Dormant?",
+	}
+
+	file, writer, err := createCSVFileWithHeader(filename, header)
 	if err != nil {
-		return fmt.Errorf("creating report file %q: %w", filename, err)
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Error("closing csv file", "error", err)
-		}
-	}()
 
-	writer := csv.NewWriter(f)
-	defer func() {
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			slog.Warn("flushing csv writer", "error", err)
-		}
-	}()
-
-	// Write header row
-	header := []string{"ID", "Login", "Name", "Email", "Last Login", "Dormant?"}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("writing header to %q: %w", filename, err)
-	}
+	defer file.Close()
 
 	// Define inactivity threshold (e.g., 90 days).
 	referenceTime := time.Now().UTC().AddDate(0, 0, -90) // Ensure UTC

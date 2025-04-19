@@ -2,11 +2,9 @@ package reports
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -30,16 +28,6 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 	slog.Info("starting repository report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
 	// Create CSV file to write the report
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// Write CSV header
 	header := []string{
 		"Owner",
 		"Repository",
@@ -51,9 +39,12 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		"Custom_Properties",
 		"Teams",
 	}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write header to file: %w", err)
+	file, writer, err := createCSVFileWithHeader(filename, header)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
+
+	defer file.Close()
 
 	// Set up concurrency limits
 	maxWorkers := 5

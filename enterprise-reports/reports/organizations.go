@@ -2,10 +2,8 @@ package reports
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -21,15 +19,6 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
 
 	// Create CSV file to write the report
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
 	header := []string{
 		"Organization",
 		"Organization ID",
@@ -37,9 +26,13 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 		"Members",
 		"Total Members",
 	}
-	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write header to file: %w", err)
+
+	file, writer, err := createCSVFileWithHeader(filename, header)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
+
+	defer file.Close()
 
 	// Fetch all enterprise organizations
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
