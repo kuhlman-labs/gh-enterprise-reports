@@ -68,13 +68,19 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		wgWorkers.Add(1)
 		go func() {
 			defer wgWorkers.Done()
-			for repo := range repoChan {
+			for {
+				repo, ok := <-repoChan
+				if !ok {
+					return
+				}
+
 				select {
 				case <-ctx.Done():
 					slog.Warn("context cancelled, stopping repository processing")
 					return
 				case semRepo <- struct{}{}: // acquire repo token
 				}
+
 				func(repo *github.Repository) {
 					defer func() { <-semRepo }() // release repo token
 					slog.Debug("processing repository", "repository", repo.GetFullName())
@@ -121,7 +127,12 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 						return
 					}
 
-					propsStr := ""
+					var propsStr string
+
+					if customProperties == nil {
+						slog.Debug("no custom properties found", "repository", repo.GetFullName())
+						propsStr = "[]"
+					}
 
 					// JSON-encode custom properties
 					propsJSON, err := json.Marshal(customProperties)
@@ -144,12 +155,10 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 						teamsStr,
 					}
 
-					// Send the row (abort on cancellation)
-					select {
-					case resultsChan <- row:
-					case <-ctx.Done():
-						return
-					}
+					atomic.AddInt64(&repoCount, 1)
+					slog.Info("processing repository", "repository", repo.GetFullName())
+
+					resultsChan <- row
 
 					slog.Debug("finished processing repository", "repository", repo.GetFullName())
 				}(repo)
@@ -182,17 +191,15 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 			}
 			for _, repo := range repos {
 				repoChan <- repo
-				atomic.AddInt64(&repoCount, 1)
-				slog.Info("processing repository", "repository", repo.GetFullName())
 			}
 		}(org)
 	}
 
 	go func() {
 		wg.Wait()
-		slog.Info("processing repositories complete", slog.Int64("total", atomic.LoadInt64(&repoCount)))
 		close(repoChan)
 		wgWorkers.Wait()
+		slog.Info("processing repositories complete", slog.Int64("total", atomic.LoadInt64(&repoCount)))
 		close(resultsChan)
 	}()
 
