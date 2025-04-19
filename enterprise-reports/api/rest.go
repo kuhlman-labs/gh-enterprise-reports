@@ -19,10 +19,7 @@ func HasRecentEvents(ctx context.Context, restClient *github.Client, user string
 	}
 
 	// Check rate limits after fetching events.
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		slog.Warn("rest rate limit low", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-		waitForLimitReset(ctx, "rest", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+	handleRESTRateLimit(ctx, resp.Rate)
 
 	for _, event := range events {
 		if event.CreatedAt != nil && event.CreatedAt.After(since) {
@@ -35,7 +32,7 @@ func HasRecentEvents(ctx context.Context, restClient *github.Client, user string
 
 // fetchUserLogins retrieves audit log events for user login actions over the past 90 days and returns a mapping of login to the most recent login time.
 func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string, referenceTime time.Time) (map[string]time.Time, error) {
-	slog.Info("fetching audit logs", "enterprise", enterpriseSlug)
+	slog.Debug("fetching audit logs", "enterprise", enterpriseSlug)
 
 	// Only pull login events on or after the reference time
 	phrase := fmt.Sprintf("action:user.login created:>=%s", referenceTime.Format(time.RFC3339))
@@ -63,10 +60,7 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 		allAuditLogs = append(allAuditLogs, auditLogs...)
 
 		// Check rate limits after fetching a page of audit logs.
-		if resp.Rate.Remaining < AuditLogRateLimitThreshold {
-			slog.Warn("audit log rate limit low", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-			waitForLimitReset(ctx, "audit_log", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-		}
+		handleRESTRateLimit(ctx, resp.Rate)
 
 		if resp.After == "" {
 			break
@@ -77,7 +71,7 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 
 	}
 
-	slog.Info("fetched all audit logs", "count", len(allAuditLogs))
+	slog.Debug("fetched all audit logs", "count", len(allAuditLogs))
 
 	loginMap := make(map[string]time.Time)
 	for _, logEntry := range allAuditLogs {
@@ -93,13 +87,13 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 		}
 	}
 
-	slog.Info("mapped audit logs to user logins", "unique_user_logins", len(loginMap))
+	slog.Debug("mapped audit logs to user logins", "unique_user_logins", len(loginMap))
 	return loginMap, nil
 }
 
 // FetchTeamsForOrganizations retrieves all teams for the specified organizations.
 func FetchTeamsForOrganizations(ctx context.Context, restClient *github.Client, org string) ([]*github.Team, error) {
-	slog.Info("fetching teams", "organization", org)
+	slog.Debug("fetching teams", "organization", org)
 
 	opts := &github.ListOptions{
 		PerPage: 100,
@@ -125,13 +119,13 @@ func FetchTeamsForOrganizations(ctx context.Context, restClient *github.Client, 
 		opts.Page = resp.NextPage
 	}
 
-	slog.Info("found teams", "count", len(allTeams))
+	slog.Debug("found teams", "count", len(allTeams))
 	return allTeams, nil
 }
 
 // FetchTeamMembers retrieves all members for the specified team and organization.
 func FetchTeamMembers(ctx context.Context, restClient *github.Client, team *github.Team, org string) ([]*github.User, error) {
-	slog.Info("getting members", "team", team.GetSlug())
+	slog.Debug("getting members", "team", team.GetSlug())
 
 	opts := &github.TeamListTeamMembersOptions{
 		Role: "all",
@@ -161,14 +155,13 @@ func FetchTeamMembers(ctx context.Context, restClient *github.Client, team *gith
 		opts.Page = resp.NextPage
 	}
 
-	slog.Info("found members", "count", len(allMembers), "team", team.GetSlug())
+	slog.Debug("found members", "count", len(allMembers), "team", team.GetSlug())
 	return allMembers, nil
 }
 
 // FetchOrganizationRepositories retrieves all repositories for the specified organization.
 func FetchOrganizationRepositories(ctx context.Context, restClient *github.Client, org string) ([]*github.Repository, error) {
-	slog.Info("getting repositories", "organization", org)
-	slog.Debug("starting repositories retrieval", "organization", org)
+	slog.Debug("fetching organization repositories", "organization", org)
 
 	opts := &github.RepositoryListByOrgOptions{
 		Type: "all",
@@ -196,13 +189,13 @@ func FetchOrganizationRepositories(ctx context.Context, restClient *github.Clien
 		}
 		opts.Page = resp.NextPage
 	}
-	slog.Info("found repositories", "count", len(allRepos), "organization", org)
+	slog.Debug("found repositories", "count", len(allRepos), "organization", org)
 	return allRepos, nil
 }
 
 // FetchTeams retrieves all teams for the specified repository.
 func FetchTeams(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.Team, error) {
-	slog.Info("getting teams", "repository", repo)
+	slog.Debug("getting teams", "repository", repo)
 
 	opts := &github.ListOptions{
 		PerPage: 100,
@@ -227,44 +220,49 @@ func FetchTeams(ctx context.Context, restClient *github.Client, owner, repo stri
 		}
 		opts.Page = resp.NextPage
 	}
+
+	slog.Debug("found teams", "count", len(allTeams), "repository", repo)
+
 	return allTeams, nil
 }
 
 // FetchExternalGroups retrieves external groups for the specified team.
 func FetchExternalGroups(ctx context.Context, restClient *github.Client, owner, teamSlug string) (*github.ExternalGroupList, error) {
-	slog.Info("getting external groups", "teamSlug", teamSlug)
+	slog.Debug("getting external groups", "teamSlug", teamSlug)
 
 	externalGroups, resp, err := restClient.Teams.ListExternalGroupsForTeamBySlug(ctx, owner, teamSlug)
 	if err != nil {
 		return nil, fmt.Errorf("get external groups for team %q/%q: %w", owner, teamSlug, err)
 	}
-	slog.Debug("fetched external groups", "external_groups_count", len(externalGroups.Groups))
 
 	// Check rate limit
 	handleRESTRateLimit(ctx, resp.Rate)
+
+	slog.Debug("fetched external groups", "count", len(externalGroups.Groups))
 
 	return externalGroups, nil
 }
 
 // FetchCustomProperties retrieves all custom properties for the specified repository.
 func FetchCustomProperties(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.CustomPropertyValue, error) {
-	slog.Info("getting custom properties", "repository", repo)
+	slog.Debug("fetching custom properties", "repository", repo)
 
 	customProperties, resp, err := restClient.Repositories.GetAllCustomPropertyValues(ctx, owner, repo)
 	if err != nil {
-		slog.Error("get custom properties failed", "error", err, "repository", repo)
 		return nil, fmt.Errorf("get custom properties for repository %q/%q: %w", owner, repo, err)
 	}
 
 	// Check rate limit
 	handleRESTRateLimit(ctx, resp.Rate)
 
+	slog.Debug("fetched custom properties", "count", len(customProperties))
+
 	return customProperties, nil
 }
 
 // FetchOrganizationMemberships retrieves all organization members with roles for the specified organization using the REST API.
 func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client, orgLogin string) ([]*github.User, error) {
-	slog.Info("fetching organization memberships", "organization", orgLogin)
+	slog.Debug("fetching organization memberships", "organization", orgLogin)
 
 	allMemberships := []*github.User{}
 	opts := &github.ListMembersOptions{
@@ -284,10 +282,7 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 		allMemberships = append(allMemberships, memberships...)
 
 		// Check rate limit
-		if resp.Rate.Remaining < RESTRateLimitThreshold {
-			slog.Warn("rate limit low, waiting until reset", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-			waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-		}
+		handleRESTRateLimit(ctx, resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -311,7 +306,8 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 		membershipList = append(membershipList, member)
 	}
 
-	slog.Info("fetched all memberships", "organizationLogin", orgLogin, "totalMemberships", len(membershipList))
+	slog.Debug("fetched all memberships", "organizationLogin", orgLogin, "count", len(membershipList))
+
 	return membershipList, nil
 }
 
@@ -325,12 +321,10 @@ func FetchOrganizationMember(ctx context.Context, restClient *github.Client, org
 	}
 
 	// Check rate limit
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		slog.Warn("rate limit low, waiting until reset", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+	handleRESTRateLimit(ctx, resp.Rate)
 
 	slog.Debug("fetched organization membership", "organization", orgLogin, "user", userLogin)
+
 	return membership, nil
 }
 
@@ -344,12 +338,10 @@ func FetchUserById(ctx context.Context, restClient *github.Client, id int64) (*g
 	}
 
 	// Check rate limit
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		slog.Warn("rate limit low, waiting until reset", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+	handleRESTRateLimit(ctx, resp.Rate)
 
 	slog.Debug("fetched user", "userID", id)
+
 	return user, nil
 }
 
@@ -361,17 +353,18 @@ func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin 
 	if err != nil {
 		return nil, fmt.Errorf("fetch organization details for %q failed: %w", orgLogin, err)
 	}
-	if resp.Rate.Remaining < RESTRateLimitThreshold {
-		slog.Warn("rate limit low, waiting until reset", "remaining", resp.Rate.Remaining, "limit", resp.Rate.Limit)
-		waitForLimitReset(ctx, "REST", resp.Rate.Remaining, resp.Rate.Limit, resp.Rate.Reset.Time)
-	}
+
+	// Check rate limit
+	handleRESTRateLimit(ctx, resp.Rate)
+
 	slog.Debug("fetched organization details", "organizationLogin", org.GetLogin())
+
 	return org, err
 }
 
 // FetchRepoCollaborators retrieves all collaborators for the specified repository.
 func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo *github.Repository) ([]*github.User, error) {
-	slog.Info("fetching repository collaborators", "repository", repo.GetFullName())
+	slog.Debug("fetching repository collaborators", "repository", repo.GetFullName())
 
 	opts := &github.ListCollaboratorsOptions{
 		ListOptions: github.ListOptions{
@@ -398,6 +391,7 @@ func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo
 		opts.Page = resp.NextPage
 	}
 
-	slog.Info("fetched repository collaborators", "totalCollaborators", len(allCollaborators), "repository", repo.GetFullName())
+	slog.Debug("fetched repository collaborators", "count", len(allCollaborators), "repository", repo.GetFullName())
+
 	return allCollaborators, nil
 }

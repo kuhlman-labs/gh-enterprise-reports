@@ -167,7 +167,7 @@ func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, e
 		variables["cursor"] = &query.Enterprise.Members.PageInfo.EndCursor
 	}
 
-	slog.Info("fetched enterprise cloud users", "users", len(allUsers))
+	slog.Info("fetched all enterprise cloud users", "users", len(allUsers))
 	return allUsers, nil
 }
 
@@ -363,6 +363,6 @@ func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, en
 		}
 		variables["cursor"] = query.Enterprise.Organizations.PageInfo.EndCursor
 	}
-	slog.Info("fetched all organizations", "totalOrganizations", len(orgs))
+	slog.Info("fetched all organizations", "total", len(orgs))
 	return orgs, nil
 }
