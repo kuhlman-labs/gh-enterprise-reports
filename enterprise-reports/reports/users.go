@@ -14,6 +14,24 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+type User struct {
+	*github.User
+	LastLogin time.Time
+	Dormant   bool
+}
+
+func (u *User) setEmail(email string) {
+	u.Email = &email
+}
+
+func (u *User) setLastLogin(lastLogin time.Time) {
+	u.LastLogin = lastLogin
+}
+
+func (u *User) setDormant(dormant bool) {
+	u.Dormant = dormant
+}
+
 // UsersReport creates a CSV report containing enterprise user details, including email and dormant status.
 func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string) error {
 	slog.Info("starting users report", "filename", filename)
@@ -24,7 +42,7 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		"Login",
 		"Name",
 		"Email",
-		"Last Login",
+		"Last Login(90 days)",
 		"Dormant?",
 	}
 
@@ -35,8 +53,9 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 
 	defer file.Close()
 
-	// Define inactivity threshold (e.g., 90 days).
-	referenceTime := time.Now().UTC().AddDate(0, 0, -90) // Ensure UTC
+	// Define inactivity threshold for dormancy check
+	const inactivityThreshold = 90 * 24 * time.Hour
+	referenceTime := time.Now().UTC().Add(-inactivityThreshold)
 
 	// Fetch user logins
 	userLogins, err := api.FetchUserLogins(ctx, restClient, enterpriseSlug, referenceTime)
@@ -50,72 +69,52 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		return fmt.Errorf("fetching enterprise users for %q: %w", enterpriseSlug, err)
 	}
 
-	// Concurrency setup
-	resultsCh := make(chan []string, len(users))
-	semaphore := make(chan struct{}, 10) // Limit concurrent requests to 10
-	var wg sync.WaitGroup
+	// Channels for user processing
+	usersChan := make(chan *User, 200)
+	resultsCh := make(chan *User, 200)
+
+	// process user
+	var userWg sync.WaitGroup
 	var userCount int64
-
-	for _, u := range users {
-		wg.Add(1)
-		go func(u github.User) {
-			defer wg.Done()
-			semaphore <- struct{}{}        // Acquire semaphore token
-			defer func() { <-semaphore }() // Release token
-
-			slog.Debug("processing user", "user", u.GetLogin())
-
-			email, err := api.FetchUserEmail(ctx, graphQLClient, enterpriseSlug, u.GetLogin())
-			if err != nil {
-				slog.Warn("fetching user email", "user", u.GetLogin(), "error", err)
-				email = "N/A"
-			}
-
-			lastLoginStr := "N/A"
-			if t, ok := userLogins[u.GetLogin()]; ok {
-				lastLoginStr = t.UTC().Format(time.RFC3339)
-			}
-
-			recentLogin := false
-			if t, ok := userLogins[u.GetLogin()]; ok && t.After(referenceTime) {
-				recentLogin = true
-			}
-
-			dormant, err := isDormant(ctx, restClient, graphQLClient, u.GetLogin(), referenceTime, recentLogin)
-			if err != nil {
-				slog.Warn("determining dormant status", "user", u.GetLogin(), "error", err)
-				dormant = false
-			}
-			dormantStr := "No"
-			if dormant {
-				dormantStr = "Yes"
-			}
-
-			row := []string{
-				fmt.Sprintf("%d", u.GetID()),
-				u.GetLogin(),
-				u.GetName(),
-				email,
-				lastLoginStr,
-				dormantStr,
-			}
-			atomic.AddInt64(&userCount, 1)
-			slog.Info("processing user", "user", u.GetLogin())
-			resultsCh <- row
-		}(*u)
+	for i := 0; i < 20; i++ {
+		userWg.Add(1)
+		go processUser(ctx, &userCount, &userWg, usersChan, resultsCh, restClient, graphQLClient, referenceTime, userLogins, enterpriseSlug)
 	}
 
 	// Close resultsCh after all goroutines finish
 	go func() {
-		wg.Wait()
+		userWg.Wait()
 		slog.Info("processing users complete", "total", atomic.LoadInt64(&userCount))
 		close(resultsCh)
 	}()
 
-	// Write CSV rows sequentially
-	for row := range resultsCh {
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("runUsersReport: write CSV row to %q failed: %w", filename, err)
+	// Enqueue user processing
+	go func() {
+		defer close(usersChan)
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for _, user := range users {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				usersChan <- &User{User: user}
+			}
+		}
+	}()
+
+	for user := range resultsCh {
+		rowData := []string{
+			fmt.Sprintf("%d", user.GetID()),
+			user.GetLogin(),
+			user.GetName(),
+			user.GetEmail(),
+			user.LastLogin.UTC().Format(time.RFC3339),
+			fmt.Sprintf("%t", user.Dormant),
+		}
+		if err := writer.Write(rowData); err != nil {
+			return fmt.Errorf("write CSV row to %q failed: %w", filename, err)
 		}
 	}
 
@@ -125,6 +124,55 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		return fmt.Errorf("failed to flush CSV writer: %w", err)
 	}
 
-	slog.Info("users report generated", "filename", filename)
+	slog.Info("completed users report", "filename", filename)
 	return nil
+}
+
+func processUser(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *User, out chan<- *User, restClient *github.Client, graphQLClient *githubv4.Client, referenceTime time.Time, userLogins map[string]time.Time, enterpriseSlug string) {
+	defer wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Debug("context cancelled, stopping user processing")
+			return
+		case user, ok := <-in:
+			if !ok {
+				slog.Debug("no more users to process")
+				return
+			}
+
+			slog.Info("processing user", "user", user.GetLogin())
+			atomic.AddInt64(count, 1)
+
+			email, err := api.FetchUserEmail(ctx, graphQLClient, enterpriseSlug, user.GetLogin())
+			if err != nil {
+				slog.Debug("fetching user email", "user", user.GetLogin(), "error", err)
+				email = "N/A"
+			}
+			user.setEmail(email)
+
+			// Last login & recent check
+			var lastLogin time.Time
+			var recent bool
+
+			if last, ok := userLogins[user.GetLogin()]; ok {
+				lastLogin = last
+				recent = last.After(referenceTime)
+			} else {
+				slog.Debug("user not found in user logins", "user", user.GetLogin())
+			}
+
+			user.setLastLogin(lastLogin)
+
+			// Dormancy
+			dormant, err := isDormant(ctx, restClient, graphQLClient, user.GetLogin(), referenceTime, recent)
+			if err != nil {
+				slog.Debug("dormancy check failed", "user", user.GetLogin(), "err", err)
+			}
+			user.setDormant(dormant)
+
+			out <- user
+
+		}
+	}
 }

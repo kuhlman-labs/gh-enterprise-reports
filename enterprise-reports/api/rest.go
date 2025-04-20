@@ -32,7 +32,7 @@ func HasRecentEvents(ctx context.Context, restClient *github.Client, user string
 
 // fetchUserLogins retrieves audit log events for user login actions over the past 90 days and returns a mapping of login to the most recent login time.
 func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string, referenceTime time.Time) (map[string]time.Time, error) {
-	slog.Debug("fetching audit logs", "enterprise", enterpriseSlug)
+	slog.Info("fetching user login audit logs", "enterprise", enterpriseSlug)
 
 	// Only pull login events on or after the reference time
 	phrase := fmt.Sprintf("action:user.login created:>=%s", referenceTime.Format(time.RFC3339))

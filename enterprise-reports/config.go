@@ -109,10 +109,10 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 		duration := time.Since(start).Round(time.Second)
 		minutes := int(duration.Minutes())
 		seconds := int(duration.Seconds()) % 60
+		slog.Info("========================================")
 		slog.Info("report completed",
 			slog.String("report", reportName),
-			slog.Int("minutes", minutes),
-			slog.Int("seconds", seconds),
+			slog.String("duration", fmt.Sprintf("%d minutes %d seconds", minutes, seconds)),
 		)
 		slog.Info("========================================")
 	}

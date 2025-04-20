@@ -105,6 +105,13 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	type rateInfo struct {
+		name  string
+		used  int
+		max   int
+		reset string
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -121,17 +128,36 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 			gql := rateLimits.GetGraphQL()
 			audit := rateLimits.GetAuditLog()
 
-			slog.Info("rate limits",
-				"rest_remaining", getRemaining(core),
-				"rest_limit", getLimit(core),
-				"rest_reset_time", getResetTime(core),
-				"graphql_remaining", getRemaining(gql),
-				"graphql_limit", getLimit(gql),
-				"graphql_reset_time", getResetTime(gql),
-				"audit_remaining", getRemaining(audit),
-				"audit_limit", getLimit(audit),
-				"audit_reset_time", getResetTime(audit),
-			)
+			rates := []rateInfo{
+				{
+					name:  "rest",
+					used:  getLimit(core) - getRemaining(core),
+					max:   getLimit(core),
+					reset: getResetTime(core),
+				},
+				{
+					name:  "graphql",
+					used:  getLimit(gql) - getRemaining(gql),
+					max:   getLimit(gql),
+					reset: getResetTime(gql),
+				},
+				{
+					name:  "audit_log",
+					used:  getLimit(audit) - getRemaining(audit),
+					max:   getLimit(audit),
+					reset: getResetTime(audit),
+				},
+			}
+
+			var kv []any
+			for _, rate := range rates {
+				// e.g. "rest" -> "123/5000"
+				kv = append(kv, rate.name, fmt.Sprintf("%d/%d", rate.used, rate.max))
+				// e.g. "rest_reset" -> "2025-04-20T12:34:56Z"
+				kv = append(kv, rate.name+"_reset", rate.reset)
+			}
+
+			slog.Info("rate limits", kv...)
 		}
 	}
 }
