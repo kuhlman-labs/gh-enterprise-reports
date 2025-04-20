@@ -14,21 +14,21 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-type User struct {
+type UserReport struct {
 	*github.User
 	LastLogin time.Time
 	Dormant   bool
 }
 
-func (u *User) setEmail(email string) {
+func (u *UserReport) setEmail(email string) {
 	u.Email = &email
 }
 
-func (u *User) setLastLogin(lastLogin time.Time) {
+func (u *UserReport) setLastLogin(lastLogin time.Time) {
 	u.LastLogin = lastLogin
 }
 
-func (u *User) setDormant(dormant bool) {
+func (u *UserReport) setDormant(dormant bool) {
 	u.Dormant = dormant
 }
 
@@ -70,10 +70,10 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	}
 
 	// Channels for user processing
-	usersChan := make(chan *User, 200)
-	resultsCh := make(chan *User, 200)
+	usersChan := make(chan *UserReport, 200)
+	resultsCh := make(chan *UserReport, 200)
 
-	// process user
+	// Process user
 	var userWg sync.WaitGroup
 	var userCount int64
 	for i := 0; i < 20; i++ {
@@ -99,7 +99,7 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				usersChan <- &User{User: user}
+				usersChan <- &UserReport{User: user}
 			}
 		}
 	}()
@@ -128,7 +128,8 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	return nil
 }
 
-func processUser(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *User, out chan<- *User, restClient *github.Client, graphQLClient *githubv4.Client, referenceTime time.Time, userLogins map[string]time.Time, enterpriseSlug string) {
+// processUser processes a single user, fetching their email and checking for dormancy.
+func processUser(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *UserReport, out chan<- *UserReport, restClient *github.Client, graphQLClient *githubv4.Client, referenceTime time.Time, userLogins map[string]time.Time, enterpriseSlug string) {
 	defer wg.Done()
 	for {
 		select {
