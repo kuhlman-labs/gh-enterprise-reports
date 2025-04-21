@@ -95,7 +95,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		for _, org := range orgs {
 			select {
 			case <-ctx.Done():
-				slog.Warn("Context cancelled fetching teams")
+				slog.Warn("context cancelled, stopping team processing")
 				return
 			case <-ticker.C:
 				teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
@@ -109,10 +109,8 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 				}
 				for _, team := range teams {
 					teamChan <- &TeamReport{
-						team,
-						org,
-						nil,
-						nil,
+						Team:         team,
+						Organization: org,
 					}
 				}
 			}

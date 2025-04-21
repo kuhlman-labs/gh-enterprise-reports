@@ -2,10 +2,9 @@ package reports
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,12 +14,15 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-type RepoTeam struct {
-	TeamID        int64
-	TeamName      string
-	TeamSlug      string
-	ExternalGroup []string
-	Permission    string
+type RepoReport struct {
+	*github.Repository
+	Teams            []*repoTeam
+	CustomProperties []*github.CustomPropertyValue
+}
+
+type repoTeam struct {
+	*github.Team
+	ExternalGroups *github.ExternalGroupList
 }
 
 // runRepositoryReport generates a CSV report for repositories, including repository details, teams, and custom properties.
@@ -46,179 +48,97 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 
 	defer file.Close()
 
-	// Set up concurrency limits
-	maxWorkers := 5
-	resultBufferSize := 100
-
-	// Create a channel for CSV rows
-	resultsChan := make(chan []string, resultBufferSize)
-	repoChan := make(chan *github.Repository)
-
-	// Semaphore channels for limiting concurrency
-	semOrg := make(chan struct{}, maxWorkers)  // for org‐fetch
-	semRepo := make(chan struct{}, maxWorkers) // for repo‐processing
-	// WaitGroup for goroutines
-	var wg sync.WaitGroup
-	var wgWorkers sync.WaitGroup
-
-	var repoCount int64
-
-	// Start repo workers
-	for i := 0; i < maxWorkers; i++ {
-		wgWorkers.Add(1)
-		go func() {
-			defer wgWorkers.Done()
-			for {
-				repo, ok := <-repoChan
-				if !ok {
-					return
-				}
-
-				select {
-				case <-ctx.Done():
-					slog.Warn("context cancelled, stopping repository processing")
-					return
-				case semRepo <- struct{}{}: // acquire repo token
-				}
-
-				func(repo *github.Repository) {
-					defer func() { <-semRepo }() // release repo token
-					slog.Debug("processing repository", "repository", repo.GetFullName())
-					// Fetch teams sequentially (no unbounded goroutines)
-					teams, err := api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
-					if err != nil {
-						slog.Debug("failed to get teams", "repository", repo.GetFullName(), "error", err)
-						return
-					}
-					var collected []RepoTeam
-					for _, t := range teams {
-						externalGroups, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())
-						if err != nil {
-							slog.Debug("failed to get external groups", "repository", repo.GetFullName(), "error", err)
-							continue
-						}
-						groupNames := make([]string, 0, len(externalGroups.Groups))
-						for _, eg := range externalGroups.Groups {
-							groupNames = append(groupNames, *eg.GroupName)
-						}
-						collected = append(collected, RepoTeam{
-							TeamID:        t.GetID(),
-							TeamName:      t.GetName(),
-							TeamSlug:      t.GetSlug(),
-							ExternalGroup: groupNames,
-							Permission:    t.GetPermission(),
-						})
-					}
-					// Sort for deterministic JSON order
-					sort.Slice(collected, func(i, j int) bool {
-						return collected[i].TeamSlug < collected[j].TeamSlug
-					})
-					teamsJSON, err := json.Marshal(collected)
-					teamsStr := "[]"
-					if err == nil {
-						teamsStr = string(teamsJSON)
-					} else {
-						slog.Warn("failed to marshal teams to JSON", "error", err)
-					}
-
-					customProperties, err := api.FetchCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
-					if err != nil {
-						slog.Debug("failed to get custom properties", "repository", repo.GetFullName(), "error", err)
-						return
-					}
-
-					var propsStr string
-
-					if customProperties == nil {
-						slog.Debug("no custom properties found", "repository", repo.GetFullName())
-						propsStr = "[]"
-					}
-
-					// JSON-encode custom properties
-					propsJSON, err := json.Marshal(customProperties)
-					if err != nil {
-						slog.Warn("failed to marshal custom properties to JSON", "error", err)
-						propsStr = "[]"
-					} else {
-						propsStr = string(propsJSON)
-					}
-
-					row := []string{
-						repo.GetOwner().GetLogin(),
-						repo.GetName(),
-						fmt.Sprintf("%t", repo.GetArchived()),
-						repo.GetVisibility(),
-						repo.GetPushedAt().Format(time.RFC3339),
-						repo.GetCreatedAt().Format(time.RFC3339),
-						fmt.Sprintf("%v", repo.Topics),
-						propsStr,
-						teamsStr,
-					}
-
-					atomic.AddInt64(&repoCount, 1)
-					slog.Info("processing repository", "repository", repo.GetFullName())
-
-					resultsChan <- row
-
-					slog.Debug("finished processing repository", "repository", repo.GetFullName())
-				}(repo)
-			}
-		}()
-	}
-
-	// Get Enterprise Organizations
+	// Get all organizations in the enterprise
 	organizations, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return err
 	}
 
-	// Enqueue repositories
-	for _, org := range organizations {
-		wg.Add(1)
-		go func(org *github.Organization) {
-			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				return
-			case semOrg <- struct{}{}: // acquire org token
-			}
-			defer func() { <-semOrg }() // release org token
-			slog.Debug("processing organization", "organization", org.GetLogin())
-			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
-			if err != nil {
-				slog.Debug("failed to get repositories", "organization", org.GetLogin(), "error", err)
-				return
-			}
-			for _, repo := range repos {
-				repoChan <- repo
-			}
-		}(org)
+	// Set up concurrency limits
+	maxWorkers := 5
+	resultBufferSize := 100
+
+	// Create a channels for repository processing
+	repoChan := make(chan *RepoReport, resultBufferSize)
+	resultsChan := make(chan *RepoReport, resultBufferSize)
+
+	// Start repo workers
+	var repoWg sync.WaitGroup
+	var repoCount int64
+	for i := 0; i < maxWorkers; i++ {
+		repoWg.Add(1)
+		go processRepository(ctx, &repoCount, &repoWg, repoChan, resultsChan, restClient)
 	}
 
+	// Close the results channel when all workers are done
 	go func() {
-		wg.Wait()
-		close(repoChan)
-		wgWorkers.Wait()
+		repoWg.Wait()
 		slog.Info("processing repositories complete", slog.Int64("total", atomic.LoadInt64(&repoCount)))
 		close(resultsChan)
 	}()
 
-	// Write rows from resultsChan to CSV
-ResultsLoop:
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Warn("context cancelled, stopping results processing")
-			return fmt.Errorf("context cancelled while writing csv: %w", ctx.Err())
-		case row, ok := <-resultsChan:
-			if !ok {
-				slog.Debug("all records processed, closing CSV writer")
-				break ResultsLoop
+	// Enque repositories for processing
+	go func() {
+		defer close(repoChan)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		for {
+			select {
+			case <-ctx.Done():
+				slog.Warn("context cancelled, stopping repository processing")
+				return
+			case <-ticker.C:
+				for _, organization := range organizations {
+					// Fetch repositories for the organization
+					repos, err := api.FetchOrganizationRepositories(ctx, restClient, organization.GetLogin())
+					if err != nil {
+						slog.Debug("failed to fetch repositories", "organization", organization, "error", err)
+						continue
+					}
+					// Enqueue repositories for processing
+					for _, repo := range repos {
+						repoChan <- &RepoReport{
+							Repository: repo,
+						}
+					}
+				}
 			}
-			if err := writer.Write(row); err != nil {
-				return fmt.Errorf("failed to write repository report to CSV: %w", err)
-			}
+
 		}
+	}()
+
+	// Write rows from resultsChan to CSV
+	for repo := range resultsChan {
+		// format custom properties into "Name=Value" strings
+		propStrs := make([]string, 0, len(repo.CustomProperties))
+		for _, cp := range repo.CustomProperties {
+			propStrs = append(propStrs, fmt.Sprintf("%s=%v", cp.PropertyName, cp.Value))
+		}
+
+		rowData := []string{
+			repo.GetOwner().GetLogin(),
+			repo.GetName(),
+			fmt.Sprintf("%t", repo.GetArchived()),
+			repo.GetVisibility(),
+			repo.GetPushedAt().String(),
+			repo.GetCreatedAt().String(),
+			fmt.Sprintf("%v", repo.Topics),
+			strings.Join(propStrs, ";"),
+		}
+		var teams []string
+		for _, team := range repo.Teams {
+			teamName := team.GetSlug()
+			if team.ExternalGroups != nil {
+				for _, group := range team.ExternalGroups.Groups {
+					teamName += fmt.Sprintf(" (%s)", group.GetGroupName())
+				}
+			}
+			teams = append(teams, teamName)
+		}
+		rowData = append(rowData, fmt.Sprintf("%v", teams))
+		if err := writer.Write(rowData); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
+		slog.Debug("wrote repository data to CSV", slog.String("repository", repo.GetFullName()))
 	}
 
 	// Ensure all CSV data is written out
@@ -227,6 +147,55 @@ ResultsLoop:
 		return fmt.Errorf("failed to flush CSV writer: %w", err)
 	}
 
-	slog.Info("repository report complete", slog.String("filename", filename))
+	slog.Info("completed repository report", slog.String("filename", filename))
 	return nil
+}
+
+func processRepository(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *RepoReport, out chan<- *RepoReport, restClient *github.Client) {
+	defer wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Warn("context cancelled, stopping repository processing")
+			return
+		case repo, ok := <-in:
+			if !ok {
+				slog.Debug("no more repositories to process")
+				return
+			}
+			teams, err := api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+			if err != nil {
+				slog.Debug("failed to get teams", "repository", repo.GetFullName(), "error", err)
+			}
+			for _, team := range teams {
+				externalGroups, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), team.GetSlug())
+				if err != nil {
+					slog.Debug("failed to get external groups", "repository", repo.GetFullName(), "error", err)
+				}
+				if externalGroups == nil {
+					externalGroups = &github.ExternalGroupList{}
+				}
+				repoTeam := &repoTeam{
+					Team:           team,
+					ExternalGroups: externalGroups,
+				}
+				// Add the team to the repository
+				repo.Teams = append(repo.Teams, repoTeam)
+			}
+			customProperties, err := api.FetchCustomProperties(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+			if err != nil {
+				slog.Debug("failed to get custom properties", "repository", repo.GetFullName(), "error", err)
+			}
+
+			if customProperties == nil {
+				customProperties = []*github.CustomPropertyValue{}
+			}
+
+			repo.CustomProperties = customProperties
+
+			out <- repo
+			atomic.AddInt64(count, 1)
+			slog.Info("processing repository", "repository", repo.GetFullName())
+		}
+	}
 }
