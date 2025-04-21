@@ -100,7 +100,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 			case <-ticker.C:
 				teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
 				if err != nil {
-					slog.Debug("failed to fetch teams for org", "org", org.GetLogin(), "error", err)
+					slog.Error("failed to fetch teams for org", "org", org.GetLogin(), "error", err)
 					continue
 				}
 				if len(teams) == 0 {

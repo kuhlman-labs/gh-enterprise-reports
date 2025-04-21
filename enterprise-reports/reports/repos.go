@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
 	"github.com/shurcooL/githubv4"
+	"golang.org/x/time/rate"
 )
 
 type RepoReport struct {
@@ -55,8 +56,10 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 	}
 
 	// Set up concurrency limits
-	maxWorkers := 5
+	maxWorkers := 10
 	resultBufferSize := 100
+	// limit to 1 request every 10ms which is 100 requests per second
+	limiter := rate.NewLimiter(rate.Every(10*time.Millisecond), 1)
 
 	// Create a channels for repository processing
 	repoChan := make(chan *RepoReport, resultBufferSize)
@@ -80,29 +83,21 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 	// Enque repositories for processing
 	go func() {
 		defer close(repoChan)
-		ticker := time.NewTicker(5 * time.Millisecond)
-		for {
-			select {
-			case <-ctx.Done():
-				slog.Warn("context cancelled, stopping repository processing")
+		for _, org := range organizations {
+			// before each API call
+			if err := limiter.Wait(ctx); err != nil {
+				slog.Warn("rate limiter interrupted", "err", err)
 				return
-			case <-ticker.C:
-				for _, organization := range organizations {
-					// Fetch repositories for the organization
-					repos, err := api.FetchOrganizationRepositories(ctx, restClient, organization.GetLogin())
-					if err != nil {
-						slog.Debug("failed to fetch repositories", "organization", organization, "error", err)
-						continue
-					}
-					// Enqueue repositories for processing
-					for _, repo := range repos {
-						repoChan <- &RepoReport{
-							Repository: repo,
-						}
-					}
-				}
 			}
 
+			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Error("failed to fetch repositories", "organization", org.GetLogin(), "error", err)
+				continue
+			}
+			for _, repo := range repos {
+				repoChan <- &RepoReport{Repository: repo}
+			}
 		}
 	}()
 
@@ -122,7 +117,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 			repo.GetPushedAt().String(),
 			repo.GetCreatedAt().String(),
 			fmt.Sprintf("%v", repo.Topics),
-			strings.Join(propStrs, ";"),
+			strings.Join(propStrs, ","),
 		}
 		var teams []string
 		for _, team := range repo.Teams {
@@ -134,7 +129,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 			}
 			teams = append(teams, teamName)
 		}
-		rowData = append(rowData, fmt.Sprintf("%v", teams))
+		rowData = append(rowData, strings.Join(teams, ","))
 		if err := writer.Write(rowData); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
