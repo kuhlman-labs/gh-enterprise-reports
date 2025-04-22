@@ -90,7 +90,7 @@ Run the CLI with the desired flags to generate reports. For example:
 **Sample Output:**
 ```csv
 Organization,Organization ID,Organization Default Repository Permission,Members,Total Members
-org1,MDQ6VXNlcjE=,read,{user1,MDQ6VXNlcjE=,John Doe,admin},{user2,MDQ6VXNlcjI=,Jane Smith,member},2
+org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleName"":""admin""}]",1
 ```
 
 ### Repositories Report
@@ -100,8 +100,8 @@ org1,MDQ6VXNlcjE=,read,{user1,MDQ6VXNlcjE=,John Doe,admin},{user2,MDQ6VXNlcjI=,J
 ```
 **Sample Output:**
 ```csv
-owner,repository,archived,visibility,pushed_at,created_at,topics,custom_properties,teams
-org1,repo1,false,public,2023-01-01T12:00:00Z,2022-01-01T12:00:00Z,[topic1,topic2],{prop1:value1},{Team Name: team1, TeamID: 1, Team Slug: team1, External Group: [group1], Permission: admin}
+Owner,Repository,Archived,Visibility,Pushed_At,Created_At,Topics,Custom_Properties,Teams
+org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:value},team1
 ```
 
 ### Teams Report
@@ -111,8 +111,8 @@ org1,repo1,false,public,2023-01-01T12:00:00Z,2022-01-01T12:00:00Z,[topic1,topic2
 ```
 **Sample Output:**
 ```csv
-Team ID,Organization,Team Name,Team Slug,External Group,Members
-1,org1,team1,team1,[group1,user-group1],[user1,user2]
+Team ID,Owner,Team Name,Team Slug,External Group,Members
+1,org1,team1,team1,[group1],[user1,user2]
 ```
 
 ### Collaborators Report
@@ -123,7 +123,7 @@ Team ID,Organization,Team Name,Team Slug,External Group,Members
 **Sample Output:**
 ```csv
 Repository,Collaborators
-org1/repo1,{Login: user1, ID: 123, Permission: admin},{Login: user2, ID: 456, Permission: push}
+org1/repo1,{login:user1,id:1,permission:admin}
 ```
 
 ### Users Report
@@ -133,9 +133,8 @@ org1/repo1,{Login: user1, ID: 123, Permission: admin},{Login: user2, ID: 456, Pe
 ```
 **Sample Output:**
 ```csv
-ID,Login,Name,Email,Last Login,Dormant?
-123,user1,John Doe,john.doe@example.com,2023-01-01T12:00:00Z,No
-456,user2,Jane Smith,jane.smith@example.com,N/A,Yes
+ID,Login,Name,Email,Last Login(90 days),Dormant?
+1,user1,User One,user1@example.com,2023-01-01T00:00:00Z,false
 ```
 
 ---

@@ -14,150 +14,151 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// runCollaboratorsReport generates a CSV report of repository collaborators for the specified enterprise.
-// The report includes repository full name and collaborator details (login, ID, and highest permission level).
+type CollaboratorReport struct {
+	Repository    *github.Repository
+	Collaborators []CollaboratorInfo
+}
+
+type CollaboratorInfo struct {
+	Login      string `json:"login"`
+	ID         int64  `json:"id"`
+	Permission string `json:"permission"`
+}
+
+// CollaboratorsReport generates a CSV report of repository collaborators for the enterprise.
 func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string) error {
-	slog.Info("starting collaborators report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
+	slog.Info("starting collaborators report",
+		slog.String("enterprise", enterpriseSlug),
+		slog.String("filename", filename),
+	)
 
-	// Create CSV file to write the report
 	header := []string{"Repository", "Collaborators"}
-
 	file, writer, err := createCSVFileWithHeader(filename, header)
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-
 	defer file.Close()
 
-	// Fetch all enterprise organizations.
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)
 	if err != nil {
-		return fmt.Errorf("failed to fetch enterprise organizations: %w", err)
+		return fmt.Errorf("failed to fetch enterprise orgs: %w", err)
 	}
 
-	// Create a worker pool.
-	const maxWorkers = 50 // Limit to 50 concurrent workers to avoid hitting secondary rate limits.
-	repoChan := make(chan *github.Repository, maxWorkers)
-	resultsChan := make(chan []string, maxWorkers)
+	const maxWorkers = 50
+	repoChan := make(chan *CollaboratorReport, maxWorkers)
+	resultsChan := make(chan *CollaboratorReport, maxWorkers)
 
 	var wg sync.WaitGroup
-	var collaboratorCount int64
+	var totalCollaborators int64
 
-	// Start worker pool.
+	// start workers
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case repo, ok := <-repoChan:
-					if !ok {
-						return
-					}
-					// Fetch collaborators for repository.
-					collaborators, err := api.FetchRepoCollaborators(ctx, restClient, repo)
-					if err != nil {
-						slog.Warn("skipping repository due to collaborator fetch error",
-							slog.String("repository", repo.GetFullName()),
-							slog.Any("err", err),
-						)
-						continue
-					}
-
-					// build JSON-encoded collaborator list
-					var infos []struct {
-						Login      string `json:"login"`
-						ID         int64  `json:"id"`
-						Permission string `json:"permission"`
-					}
-					for _, c := range collaborators {
-						infos = append(infos, struct {
-							Login      string `json:"login"`
-							ID         int64  `json:"id"`
-							Permission string `json:"permission"`
-						}{
-							Login:      c.GetLogin(),
-							ID:         c.GetID(),
-							Permission: getHighestPermission(c.GetPermissions()),
-						})
-					}
-					data, err := json.Marshal(infos)
-					if err != nil {
-						slog.Warn("failed to marshal collaborators to JSON",
-							slog.String("repository", repo.GetFullName()),
-							slog.Any("err", err),
-						)
-						data = []byte("[]")
-					}
-					record := []string{repo.GetFullName(), string(data)}
-
-					atomic.AddInt64(&collaboratorCount, int64(len(infos)))
-					slog.Info("processing collaborators for repository", "repository", repo.GetFullName(), "collaborators", len(infos))
-					resultsChan <- record
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
+		go processRepoCollaborators(ctx, &wg, &totalCollaborators, repoChan, resultsChan, restClient)
 	}
 
-	// Enqueue repositories into the worker pool.
-	for _, org := range orgs {
-		slog.Debug("processing organization", slog.String("organization", org.GetLogin()))
-		// Fetch repositories for the organization.
-		repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
-		if err != nil {
-			slog.Warn("skipping organization due to repository fetch error",
-				slog.String("organization", org.GetLogin()),
-				slog.Any("err", err),
-			)
-			continue
-		}
-
-		for _, repo := range repos {
-			slog.Debug("processing repository", slog.String("repository", repo.GetFullName()))
-			select {
-			case repoChan <- repo:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-	}
-
-	close(repoChan)
-	wg.Wait()
-	slog.Info("processing collaborators complete", slog.Int64("total", atomic.LoadInt64(&collaboratorCount)))
-	close(resultsChan)
-
-	// Single goroutine to write CSV rows.
-ResultsLoop:
-	for {
-		select {
-		case record, ok := <-resultsChan:
-			if !ok {
-				slog.Debug("all records processed, closing CSV writer")
-				break ResultsLoop
-			}
-			if err := writer.Write(record); err != nil {
-				slog.Error("failed to write collaborators to csv",
-					slog.String("repository", record[0]),
+	// enqueue repos
+	go func() {
+		for _, org := range orgs {
+			repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Error("failed to fetch repositories for org",
+					slog.String("org", org.GetLogin()),
 					slog.Any("err", err),
 				)
-			} else {
-				slog.Debug("collaborators written to csv", slog.String("repository", record[0]))
+				continue
 			}
-		case <-ctx.Done():
-			slog.Warn("context cancelled, stopping results processing", slog.Any("err", ctx.Err()))
-			return fmt.Errorf("context cancelled while writing csv: %w", ctx.Err())
+			for _, repo := range repos {
+				slog.Debug("queuing repository", slog.String("repository", repo.GetFullName()))
+				repoChan <- &CollaboratorReport{
+					Repository: repo,
+				}
+			}
+		}
+		close(repoChan)
+	}()
+
+	// wait for workers then close results
+	go func() {
+		wg.Wait()
+		slog.Info("processing repository collaborators complete", slog.Int64("total", atomic.LoadInt64(&totalCollaborators)))
+		close(resultsChan)
+	}()
+
+	// write CSV
+
+	for result := range resultsChan {
+		record := make([]string, 0, len(result.Collaborators)+1)
+		record = append(record, result.Repository.GetFullName())
+		for _, collaborator := range result.Collaborators {
+			collabJSON, err := json.Marshal(collaborator)
+			if err != nil {
+				slog.Error("failed to marshal collaborator info",
+					slog.String("repository", result.Repository.GetFullName()),
+					slog.Any("collaborator", collaborator),
+					slog.Any("err", err),
+				)
+				continue
+			}
+			record = append(record, string(collabJSON))
+		}
+		// Write the record to the CSV file
+
+		if err := writer.Write(record); err != nil {
+			slog.Error("failed to write collaborators to csv",
+				slog.String("repository", record[0]),
+				slog.Any("err", err),
+			)
+		} else {
+			slog.Debug("collaborators written to csv", slog.String("repository", record[0]))
 		}
 	}
 
-	// Ensure all CSV data is written out
 	writer.Flush()
 	if err := writer.Error(); err != nil {
-		return fmt.Errorf("failed to flush CSV writer: %w", err)
+		return fmt.Errorf("flush failure: %w", err)
 	}
-
 	slog.Info("collaborators report complete", slog.String("filename", filename))
 	return nil
+}
+
+// processRepoCollaborators fetches collaborators for a single repo and sends a RepoReport.
+func processRepoCollaborators(ctx context.Context, wg *sync.WaitGroup, counter *int64, in <-chan *CollaboratorReport, out chan<- *CollaboratorReport,
+	restClient *github.Client,
+) {
+	defer wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case repo, ok := <-in:
+			if !ok {
+				return
+			}
+			repoCollaborators, err := api.FetchRepoCollaborators(ctx, restClient, repo.Repository)
+			if err != nil {
+				slog.Debug("skipping repository",
+					slog.String("repo", repo.Repository.GetFullName()),
+					slog.Any("err", err),
+				)
+				continue
+			}
+			var collaborators []CollaboratorInfo
+			for _, collaborator := range repoCollaborators {
+				collaborators = append(collaborators, CollaboratorInfo{
+					Login:      collaborator.GetLogin(),
+					ID:         collaborator.GetID(),
+					Permission: getHighestPermission(collaborator.GetPermissions()),
+				})
+			}
+			atomic.AddInt64(counter, 1)
+			slog.Info("processing repository collaborators",
+				slog.String("repo", repo.Repository.GetFullName()),
+			)
+
+			repo.Collaborators = collaborators
+
+			out <- repo
+		}
+	}
 }
