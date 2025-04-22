@@ -37,7 +37,7 @@ Before using this tool, ensure you have the following:
 
 ---
 
-## 🚀 Installation
+## 🚀 Install manually
 
 1. Clone the repository:
    ```bash
@@ -51,6 +51,15 @@ Before using this tool, ensure you have the following:
    ```
 
 3. Add the binary to your PATH or run it directly.
+
+## 🚀 Install with Github CLI
+
+1. Install the GitHub CLI from [cli.github.com](https://cli.github.com/).
+
+2. Install the extension:
+   ```bash
+   gh extension install kuhlman-labs/gh-enterprise-reports
+   ```
 
 ---
 
@@ -87,6 +96,11 @@ Run the CLI with the desired flags to generate reports. For example:
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
+or with GitHub CLI:
+```bash
+gh enterprise reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
+```
+
 **Sample Output:**
 ```csv
 Organization,Organization ID,Organization Default Repository Permission,Members,Total Members
@@ -98,6 +112,11 @@ org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleNam
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
 ```
+or with GitHub CLI:
+```bash
+gh enterprise reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
+```
+
 **Sample Output:**
 ```csv
 Owner,Repository,Archived,Visibility,Pushed_At,Created_At,Topics,Custom_Properties,Teams
@@ -109,6 +128,12 @@ org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
 ```
+
+or with GitHub CLI:
+```bash
+gh enterprise reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
+```
+
 **Sample Output:**
 ```csv
 Team ID,Owner,Team Name,Team Slug,External Group,Members
@@ -120,6 +145,11 @@ Team ID,Owner,Team Name,Team Slug,External Group,Members
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
 ```
+or with GitHub CLI:
+```bash
+gh enterprise reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
+```
+
 **Sample Output:**
 ```csv
 Repository,Collaborators
@@ -131,6 +161,11 @@ org1/repo1,{login:user1,id:1,permission:admin}
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
 ```
+or with GitHub CLI:
+```bash
+gh enterprise reports users --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
+```
+
 **Sample Output:**
 ```csv
 ID,Login,Name,Email,Last Login(90 days),Dormant?
@@ -170,7 +205,6 @@ This project uses the following libraries:
 - [shurcooL/githubv4](https://github.com/shurcooL/githubv4): GitHub GraphQL API client for Go.
 - [cobra](https://github.com/spf13/cobra): CLI framework for Go.
 - [viper](https://github.com/spf13/viper): Configuration management for Go.
-- [zerolog](https://github.com/rs/zerolog): High-performance logging for Go.
 
 ---
 
