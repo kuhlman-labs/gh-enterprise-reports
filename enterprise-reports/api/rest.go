@@ -299,9 +299,13 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 			return nil, fmt.Errorf("fetch user details for %q failed: %w", member.GetLogin(), err)
 		}
 
-		member := &github.User{
-			RoleName: memberRole.Role,
+		memberName, err := FetchUserById(ctx, restClient, member.GetID())
+		if err != nil {
+			return nil, fmt.Errorf("fetch user by id %d failed: %w", member.GetID(), err)
 		}
+
+		member.RoleName = memberRole.Role
+		member.Name = memberName.Name
 
 		membershipList = append(membershipList, member)
 	}
