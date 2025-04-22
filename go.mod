@@ -3,7 +3,7 @@ module github.com/kuhlman-labs/gh-enterprise-reports
 go 1.24.0
 
 require (
-	github.com/bradleyfalzon/ghinstallation/v2 v2.14.0
+	github.com/bradleyfalzon/ghinstallation/v2 v2.15.0
 	github.com/google/go-github/v70 v70.0.0
 	github.com/lmittmann/tint v1.0.7
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
@@ -17,8 +17,8 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
-	github.com/google/go-github/v69 v69.2.0 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/google/go-github/v71 v71.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
