@@ -67,7 +67,7 @@ Before using this tool, ensure you have the following:
 
 Run the CLI with the desired flags to generate reports. For example:
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
+gh enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
 
 ### 🔧 Flags
@@ -98,7 +98,7 @@ Run the CLI with the desired flags to generate reports. For example:
 ```
 or with GitHub CLI:
 ```bash
-gh enterprise reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
+gh enterprise-reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
 
 **Sample Output:**
@@ -114,7 +114,7 @@ org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleNam
 ```
 or with GitHub CLI:
 ```bash
-gh enterprise reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
+gh enterprise-reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
 ```
 
 **Sample Output:**
@@ -131,7 +131,7 @@ org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:
 
 or with GitHub CLI:
 ```bash
-gh enterprise reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
+gh enterprise-reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
 ```
 
 **Sample Output:**
@@ -147,7 +147,7 @@ Team ID,Owner,Team Name,Team Slug,External Group,Members
 ```
 or with GitHub CLI:
 ```bash
-gh enterprise reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
+gh enterprise-reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
 ```
 
 **Sample Output:**
@@ -163,7 +163,7 @@ org1/repo1,{login:user1,id:1,permission:admin}
 ```
 or with GitHub CLI:
 ```bash
-gh enterprise reports users --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
+gh enterprise-reports users --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
 ```
 
 **Sample Output:**
