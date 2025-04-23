@@ -185,6 +185,8 @@ func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 				TotalIssueContributions             int
 				TotalPullRequestContributions       int
 				TotalPullRequestReviewContributions int
+				HasAnyContributions                 bool
+				HasAnyRestrictedContributions       bool
 			} `graphql:"contributionsCollection(from: $since)"`
 		} `graphql:"user(login: $login)"`
 		RateLimit struct {
@@ -228,7 +230,9 @@ func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 		)
 	}
 
-	return total > 0, nil
+	active := contrib.HasAnyContributions || contrib.HasAnyRestrictedContributions || total > 0
+
+	return active, nil
 }
 
 // fetchUserEmail queries the enterprise GraphQL API to retrieve the email address for the specified user.
