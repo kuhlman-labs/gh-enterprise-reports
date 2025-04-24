@@ -3,12 +3,14 @@ package enterprisereports
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"log/slog"
 
 	"github.com/shurcooL/githubv4"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/google/go-github/v70/github"
@@ -51,6 +53,13 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("unknown auth-method %q: please use 'token' or 'app'", c.AuthMethod)
 	}
+
+	// Ensure at least one report flag is provided.
+	if !c.Organizations && !c.Repositories && !c.Teams && !c.Collaborators && !c.Users {
+		valid := []string{"organizations", "repositories", "teams", "collaborators", "users"}
+		return fmt.Errorf("no report selected: please specify at least one of: %s", strings.Join(valid, ", "))
+	}
+
 	return nil
 }
 
@@ -80,6 +89,15 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	// Bind flags to Viper
 	viper.BindPFlags(rootCmd.Flags())
 
+	// Custom handler for unknown flags: list all valid flags
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		var flags []string
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			flags = append(flags, "--"+f.Name)
+		})
+		return fmt.Errorf("%s; valid flags are: %s", err.Error(), strings.Join(flags, ", "))
+	})
+
 	// Optionally read in config file and environment variables:
 	viper.SetConfigName("config") // name of config file (without extension)
 	viper.AddConfigPath(".")      // look for config in the working directory
@@ -87,11 +105,11 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 
 	// Validate the configuration file.
 	if err := viper.ReadInConfig(); err != nil {
-		slog.Warn("failed to read config file, proceeding with defaults and environment variables", slog.Any("err", err))
+		slog.Warn("failed to read config file", slog.Any("err", err))
 	} else {
 		slog.Info("using config file", slog.String("configFile", viper.ConfigFileUsed()))
 		// Read the config file and bind it to the config struct.
-		if err := viper.Unmarshal(config); err != nil {
+		if err := viper.UnmarshalExact(config); err != nil {
 			slog.Error("failed to unmarshal config file", slog.Any("err", err))
 		}
 	}
