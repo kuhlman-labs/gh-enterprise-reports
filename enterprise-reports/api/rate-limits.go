@@ -3,9 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"log/slog"
+	"time"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/shurcooL/githubv4"
@@ -20,26 +19,30 @@ const AuditLogRateLimitThreshold = 15
 // GraphQLRateLimitThreshold is the minimum remaining points before waiting.
 const GraphQLRateLimitThreshold = 100
 
-// checkRateLimit fetches the current rate limits for the client.
-func checkRateLimit(ctx context.Context, client *github.Client) (*github.RateLimits, error) {
+// rateLimiter is an interface for the rate limit service.
+type rateLimiter interface {
+	Get(ctx context.Context) (*github.RateLimits, *github.Response, error)
+}
+
+// checkRateLimit now takes any rateLimiter, retries on error
+func checkRateLimit(ctx context.Context, svc rateLimiter) (*github.RateLimits, error) {
+	const maxRetries = 3
 	var rl *github.RateLimits
 	var err error
-
-	// Retry logic for rate limit checks.
-	for i := 0; i < 3; i++ {
+	for i := 0; i < maxRetries; i++ {
+		rl, _, err = svc.Get(ctx)
+		if err == nil {
+			return rl, nil
+		}
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context canceled during rate limit check: %w", ctx.Err())
 		default:
-			rl, _, err = client.RateLimit.Get(ctx)
-			if err == nil {
-				return rl, nil
-			}
 			slog.Warn("retrying rate limit check", "error", err, "attempt", i+1)
 			time.Sleep(2 * time.Second)
 		}
 	}
-	return nil, fmt.Errorf("failed to fetch rate limits after retries: %w", err)
+	return nil, err
 }
 
 // waitForLimitReset waits until the given limit resets.
@@ -80,7 +83,7 @@ func handleRESTRateLimit(ctx context.Context, rate github.Rate) {
 
 // EnsureRateLimits checks the REST, GraphQL, and Audit Log rate limits and waits if limits are low.
 func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
-	rl, err := checkRateLimit(ctx, restClient)
+	rl, err := checkRateLimit(ctx, rateLimiter(restClient.RateLimit))
 	if err != nil {
 		return // Error already logged in checkRateLimit
 	}
@@ -98,8 +101,8 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	}
 }
 
-// MonitorRateLimits periodically checks and logs REST, GraphQL, and Audit Log API rate limits.
-func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, interval time.Duration) {
+// MonitorRateLimits now also takes rateLimiter instead of *github.Client
+func MonitorRateLimits(ctx context.Context, restSvc rateLimiter, graphQLClient *githubv4.Client, interval time.Duration) {
 	slog.Info("starting rate limit monitoring", "interval", interval)
 
 	ticker := time.NewTicker(interval)
@@ -118,7 +121,7 @@ func MonitorRateLimits(ctx context.Context, restClient *github.Client, graphQLCl
 			slog.Info("rate limit monitoring stopped")
 			return
 		case <-ticker.C:
-			rateLimits, err := checkRateLimit(ctx, restClient)
+			rateLimits, err := checkRateLimit(ctx, restSvc)
 			if err != nil {
 				slog.Warn("error fetching rest api rate limits", "error", err)
 				continue

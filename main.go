@@ -83,7 +83,7 @@ func main() {
 			api.EnsureRateLimits(ctx, restClient)
 
 			// Start monitoring rate limits every 30 seconds asynchronously.
-			go api.MonitorRateLimits(ctx, restClient, graphQLClient, 30*time.Second)
+			go api.MonitorRateLimits(ctx, restClient.RateLimit, graphQLClient, 30*time.Second)
 
 			// Run the reports.
 			enterprisereports.RunReports(ctx, config, restClient, graphQLClient)
