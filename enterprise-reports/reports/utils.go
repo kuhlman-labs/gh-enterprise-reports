@@ -87,10 +87,10 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 		return false, fmt.Errorf("checking recent contributions for %q: %w", user, err)
 	}
 
-	// If the user has neither recent events nor contributions, the user is dormant.
+	// If the user has neither recent events nor contributions, and no recent login, they are dormant.
 	dormant := !(recentEvents || recentContribs || recentLogin)
 
-	// report final dormant check outcome.
+	// Report final dormant check outcome.
 	slog.Debug("dormant check result",
 		"user", user,
 		"recentEvents", recentEvents,
