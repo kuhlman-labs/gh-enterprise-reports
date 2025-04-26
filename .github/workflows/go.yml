@@ -38,18 +38,16 @@ jobs:
         fi
 
     # 3) Lint
-    - name: Install golangci-lint
-      run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v7
+      with:
+        version: v2.0
 
-    - name: Run linters
-      run: golangci-lint run ./...
-
-    # 4) Security scan
-    - name: Install gosec
-      run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-
-    - name: Run gosec
-      run: gosec ./...
+    # 4) Security check
+    - name: gosec security checker
+      uses: securego/gosec@v2.22.3
+      with:
+        args: ./...
 
     # 5) Build, test, vet
     - name: Build
