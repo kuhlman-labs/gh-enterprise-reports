@@ -1,12 +1,23 @@
 # gh-enterprise-reports
 
-`gh-enterprise-reports` is a GitHub CLI extension designed to generate detailed reports for GitHub Enterprise Cloud EMU environments. It supports various types of reports, including:
+[![Build Status](https://github.com/kuhlman-labs/gh-enterprise-reports/actions/workflows/go.yml/badge.svg)](https://github.com/kuhlman-labs/gh-enterprise-reports/actions/workflows/go.yml)
+![Go version](https://img.shields.io/badge/go-%3E=1.24-blue?logo=go)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-- **Organizations**
-- **Repositories**
-- **Teams**
-- **Collaborators**
-- **Users**
+A GitHub CLI extension to help administrators of a GitHub Enterprise Cloud environment run reports against their enterprise.
+
+## Table of Contents
+- [Features](#%F0%9F%93%8B-features)
+- [Prerequisites](#%E2%9A%99%EF%B8%8F-prerequisites)
+- [Install manually](#%F0%9F%9A%80-install-manually)
+- [Install with GitHub CLI](#%F0%9F%9A%80-install-with-github-cli)
+- [Usage](#%F0%9F%9A%99%EF%B8%8F-usage)
+  - [Flags](#-flags)
+  - [Sample Output](#%F0%9F%93%8A-sample-output)
+- [Getting Help](#-%E2%9F%99%CB%86-getting-help)
+- [Contributing](#%E2%9D%A4%EF%B8%8F-contributing)
+- [Acknowledgments](#%F0%9F%93%9A-acknowledgments)
+- [License](#%F0%9F%93%9C-license)
 
 ---
 
@@ -52,7 +63,7 @@ Before using this tool, ensure you have the following:
 
 3. Add the binary to your PATH or run it directly.
 
-## 🚀 Install with Github CLI
+## 🚀 Install with GitHub CLI
 
 1. Install the GitHub CLI from [cli.github.com](https://cli.github.com/).
 
@@ -96,17 +107,14 @@ gh enterprise-reports --auth-method token --token <your-token> --enterprise <ent
 
 **Command:**
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
-```
-or with GitHub CLI:
-```bash
-gh enterprise-reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
+gh enterprise-reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
 ```csv
 Organization,Organization ID,Organization Default Repository Permission,Members,Total Members
 org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleName"":""admin""}]",1
+...
 ```
 </details>
 
@@ -115,17 +123,14 @@ org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleNam
 
 **Command:**
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
-```
-or with GitHub CLI:
-```bash
-gh enterprise-reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
+gh enterprise-reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
 ```csv
 Owner,Repository,Archived,Visibility,Pushed_At,Created_At,Topics,Custom_Properties,Teams
 org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:value},team1
+...
 ```
 </details>
 
@@ -134,17 +139,14 @@ org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:
 
 **Command:**
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
-```
-or with GitHub CLI:
-```bash
-gh enterprise-reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
+gh enterprise-reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
 ```csv
 Team ID,Owner,Team Name,Team Slug,External Group,Members
 1,org1,team1,team1,[group1],[user1,user2]
+...
 ```
 </details>
 
@@ -153,17 +155,14 @@ Team ID,Owner,Team Name,Team Slug,External Group,Members
 
 **Command:**
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
-```
-or with GitHub CLI:
-```bash
-gh enterprise-reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
+gh enterprise-reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
 ```csv
 Repository,Collaborators
 org1/repo1,{login:user1,id:1,permission:admin}
+...
 ```
 </details>
 
@@ -172,17 +171,14 @@ org1/repo1,{login:user1,id:1,permission:admin}
 
 **Command:**
 ```bash
-./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
-```
-or with GitHub CLI:
-```bash
-gh enterprise-reports users --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
+gh enterprise-reports users --auth-method token --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
 ```csv
 ID,Login,Name,Email,Last Login(90 days),Dormant?
 1,user1,User One,user1@example.com,2023-01-01T00:00:00Z,false
+...
 ```
 </details>
 
@@ -198,6 +194,13 @@ Logs are written to `gh-enterprise-reports.log` in the current directory. You ca
 
 - **Authentication Errors**: Ensure your token or GitHub App credentials are correct and have the necessary permissions.
 - **Rate Limit Exceeded**: The tool automatically waits for rate limits to reset. If this occurs frequently, consider using a GitHub App.
+
+---
+
+## 🤔 Getting Help
+
+If you encounter issues or have questions, please open an issue:
+https://github.com/kuhlman-labs/gh-enterprise-reports/issues
 
 ---
 
