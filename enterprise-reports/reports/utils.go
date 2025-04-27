@@ -37,6 +37,7 @@ func getHighestPermission(permissions map[string]bool) string {
 // and the path itself is non‐empty, non‐absolute, and contains no parent refs.
 func validateFilePath(path string) error {
 	// normalize and reject traversal/absolute paths
+	// normalize and reject traversal/absolute paths
 	cleanPath := filepath.Clean(path)
 	if filepath.IsAbs(cleanPath) {
 		return fmt.Errorf("absolute paths not allowed: %s", cleanPath)
@@ -44,12 +45,14 @@ func validateFilePath(path string) error {
 	if strings.Contains(cleanPath, "..") {
 		return fmt.Errorf("invalid file path: contains parent directory reference")
 	}
-	path = cleanPath
-
-	if path == "" {
+	// ensure cleanPath lives underneath the current working directory
+	if rel, err := filepath.Rel(".", cleanPath); err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("file path escapes working directory: %s", cleanPath)
+	}
+	if cleanPath == "" {
 		return fmt.Errorf("file path cannot be empty")
 	}
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(cleanPath)
 	info, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -69,7 +72,7 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 	if err := validateFilePath(path); err != nil {
 		return nil, nil, err
 	}
-	// #nosec G304  // safe: path has been validated by validateFilePath
+
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create CSV file %s: %w", path, err)
