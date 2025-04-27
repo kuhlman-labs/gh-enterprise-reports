@@ -60,7 +60,11 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			slog.Warn("failed to close CSV file", "error", cerr)
+		}
+	}()
 
 	// Get all organizations in the enterprise
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
@@ -146,7 +150,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		// Prepare CSV row
 		rowData := []string{
 			fmt.Sprintf("%d", team.Team.GetID()),
-			team.Organization.GetLogin(),
+			team.GetLogin(),
 			team.Team.GetName(),
 			team.GetSlug(),
 			externalGroupsStr,
@@ -182,12 +186,12 @@ func processTeams(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-ch
 			}
 
 			// Fetch members and external groups for each team
-			members, err := api.FetchTeamMembers(ctx, restClient, team.Team, team.Organization.GetLogin())
+			members, err := api.FetchTeamMembers(ctx, restClient, team.Team, team.GetLogin())
 			if err != nil {
 				slog.Debug("Skipping team due to error fetching members", "error", err, "team", team.GetSlug())
 				members = nil
 			}
-			externalGroups, err := api.FetchExternalGroups(ctx, restClient, team.Organization.GetLogin(), team.GetSlug())
+			externalGroups, err := api.FetchExternalGroups(ctx, restClient, team.GetLogin(), team.GetSlug())
 			if err != nil {
 				slog.Debug("Skipping external groups due to error", "error", err, "team", team.GetSlug())
 				externalGroups = nil

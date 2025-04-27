@@ -47,7 +47,11 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			slog.Error("failed to close CSV file", slog.Any("err", err))
+		}
+	}()
 
 	// Get all organizations in the enterprise
 	organizations, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)

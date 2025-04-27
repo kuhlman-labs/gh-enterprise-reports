@@ -145,7 +145,9 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	rootCmd.Flags().Int64Var(&config.GithubAppInstallationID, "app-installation-id", 0, "GitHub App installation ID (required if auth-method is app)")
 
 	// Bind flags to Viper
-	viper.BindPFlags(rootCmd.Flags())
+	if err := viper.BindPFlags(rootCmd.Flags()); err != nil {
+		panic(fmt.Errorf("failed to bind flags: %w", err))
+	}
 
 	// Custom handler for unknown flags: list all valid flags
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {

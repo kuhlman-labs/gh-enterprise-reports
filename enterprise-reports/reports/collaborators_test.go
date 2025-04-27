@@ -49,7 +49,9 @@ func TestCollaboratorsReport_NoOrgs(t *testing.T) {
 	// GraphQL returns empty organizations
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -76,20 +78,26 @@ func TestCollaboratorsReport_SingleRepoSingleCollaborator(t *testing.T) {
 	// GraphQL: one org
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 
 	// REST: list repos
 	mux.HandleFunc("/orgs/org1/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// include owner to ensure repo.Owner is populated
-		fmt.Fprintln(w, `[{"name":"repo1","full_name":"org1/repo1","owner":{"login":"org1"}}]`)
+		if _, err := fmt.Fprintln(w, `[{"name":"repo1","full_name":"org1/repo1","owner":{"login":"org1"}}]`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 
 	// REST: list collaborators
 	mux.HandleFunc("/repos/org1/repo1/collaborators", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `[{"login":"user1","id":123,"permissions":{"admin":true,"push":false,"pull":true}}]`)
+		if _, err := fmt.Fprintln(w, `[{"login":"user1","id":123,"permissions":{"admin":true,"push":false,"pull":true}}]`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 
 	srv := httptest.NewServer(mux)

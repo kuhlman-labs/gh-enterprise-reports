@@ -42,7 +42,8 @@ func TestRepositoryReport_NoRepos(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL returns no orgs
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		_, err := fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		require.NoError(t, err)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -72,11 +73,11 @@ func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL: one org
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1","id":"ORG1ID"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		_, _ = fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1","id":"ORG1ID"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
 	})
 	// REST: list repos
 	mux.HandleFunc("/orgs/org1/repos", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `[{
+		_, _ = fmt.Fprintln(w, `[{ 
 			"name":"repo1","full_name":"org1/repo1","archived":false,"visibility":"public",
 			"owner":{"login":"org1"},
 			"pushed_at":"2020-01-01T00:00:00Z","created_at":"2020-01-01T00:00:00Z",
@@ -86,16 +87,16 @@ func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	// REST: list teams for the repository
 	mux.HandleFunc("/repos/org1/repo1/teams", func(w http.ResponseWriter, r *http.Request) {
 		// This endpoint is called by api.FetchTeams within processRepository
-		fmt.Fprintln(w, `[{"slug":"team1", "name": "Team One", "id": 1}]`)
+		_, _ = fmt.Fprintln(w, `[{"slug":"team1", "name": "Team One", "id": 1}]`)
 	})
 	// REST: list external groups
 	mux.HandleFunc("/orgs/org1/teams/team1/external-groups", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"groups": [{"group_name":"group1","group_id":42}]}`)
+		_, _ = fmt.Fprintln(w, `{"groups": [{"group_name":"group1","group_id":42}]}`)
 	})
 	// REST: list custom properties
 	mux.HandleFunc("/repos/org1/repo1/properties/values", func(w http.ResponseWriter, r *http.Request) {
 		t.Logf("Mock handler hit for custom properties: %s", r.URL.Path)
-		fmt.Fprintln(w, `[{"property_name":"prop1","value":"val1"}]`)
+		_, _ = fmt.Fprintln(w, `[{"property_name":"prop1","value":"val1"}]`)
 	})
 
 	srv := httptest.NewServer(mux)

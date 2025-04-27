@@ -65,7 +65,9 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 	}
 	w := csv.NewWriter(f)
 	if err := w.Write(header); err != nil {
-		f.Close()
+		if cerr := f.Close(); cerr != nil {
+			slog.Error("failed to close file after header write error", slog.Any("err", cerr))
+		}
 		return nil, nil, fmt.Errorf("failed to write header to file %s: %w", path, err)
 	}
 	return f, w, nil
@@ -88,7 +90,7 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	}
 
 	// If the user has neither recent events nor contributions, and no recent login, they are dormant.
-	dormant := !(recentEvents || recentContribs || recentLogin)
+	dormant := !recentEvents && !recentContribs && !recentLogin
 
 	// Report final dormant check outcome.
 	slog.Debug("dormant check result",

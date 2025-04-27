@@ -67,7 +67,7 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 		}
 
 		// Update the cursor for the next page.
-		opts.ListCursorOptions.After = resp.After
+		opts.After = resp.After
 
 	}
 
@@ -80,7 +80,7 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 			continue
 		}
 		actor := *logEntry.Actor
-		eventTime := logEntry.CreatedAt.Time.UTC() // Ensure UTC
+		eventTime := logEntry.CreatedAt.UTC() // Ensure UTC
 		// Store the latest event per user.
 		if existing, found := loginMap[actor]; !found || eventTime.After(existing) {
 			loginMap[actor] = eventTime

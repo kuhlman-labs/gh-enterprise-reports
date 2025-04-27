@@ -28,7 +28,7 @@ func TestSetMembers_Nil(t *testing.T) {
 
 // TestSetMembers_NonNil ensures setMembers sets provided slice.
 func TestSetMembers_NonNil(t *testing.T) {
-	user := &github.User{Login: github.String("user1")}
+	user := &github.User{Login: github.Ptr("user1")}
 	tr := &TeamReport{}
 	tr.setMembers([]*github.User{user})
 	assert.Len(t, tr.Members, 1)
@@ -45,7 +45,7 @@ func TestSetExternalGroups_Nil(t *testing.T) {
 
 // TestSetExternalGroups_NonNil ensures externalGroups set correctly.
 func TestSetExternalGroups_NonNil(t *testing.T) {
-	ext := &github.ExternalGroupList{Groups: []*github.ExternalGroup{{GroupName: github.String("group1")}}}
+	ext := &github.ExternalGroupList{Groups: []*github.ExternalGroup{{GroupName: github.Ptr("group1")}}}
 	tr := &TeamReport{}
 	tr.setExternalGroups(ext)
 	assert.Len(t, tr.ExternalGroups.Groups, 1)
@@ -75,7 +75,7 @@ func TestTeamsReport_NoTeams(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL returns no orgs
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		_, _ = fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -99,24 +99,23 @@ func TestTeamsReport_NoTeams(t *testing.T) {
 	)
 }
 
-// TestTeamsReport_SingleTeam exercises one org → one team → one member → one ext group.
 func TestTeamsReport_SingleTeam(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL: one org
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		_, _ = fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
 	})
 	// REST: list teams for org
 	mux.HandleFunc("/orgs/org1/teams", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `[{"id":1,"slug":"team1","name":"Team One"}]`)
+		_, _ = fmt.Fprintln(w, `[{"id":1,"slug":"team1","name":"Team One"}]`)
 	})
 	// REST: list members by slug
 	mux.HandleFunc("/orgs/org1/teams/team1/members", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `[{"login":"user1"}]`)
+		_, _ = fmt.Fprintln(w, `[{"login":"user1"}]`)
 	})
 	// REST: list external groups
 	mux.HandleFunc("/orgs/org1/teams/team1/external-groups", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"groups":[{"group_name":"groupX"}]}`)
+		_, _ = fmt.Fprintln(w, `{"groups":[{"group_name":"groupX"}]}`)
 	})
 
 	srv := httptest.NewServer(mux)

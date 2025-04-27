@@ -20,7 +20,11 @@ func main() {
 		slog.Error("failed to open log file", "error", err)
 		os.Exit(1)
 	}
-	defer logFile.Close()
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			slog.Error("failed to close log file", "err", err)
+		}
+	}()
 
 	// initialize slog to file+terminal at Info level
 	enterprisereports.SetupLogging(logFile, slog.LevelInfo)

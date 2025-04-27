@@ -47,12 +47,20 @@ func TestOrganizationsReport_GraphQLFetchError(t *testing.T) {
 
 // TestOrganizationsReport_NoOrgs tests that when no organizations are returned, only the header is written.
 func TestOrganizationsReport_NoOrgs(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+
+	// GraphQL fetch no organizations
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
-	}))
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
+	// GraphQL client pointing at our server
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
 	restClient := github.NewClient(nil)
 
@@ -77,32 +85,44 @@ func TestOrganizationsReport_SingleOrgSingleMember(t *testing.T) {
 	// GraphQL: one org
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1","id":"ORG1ID"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"organizations":{"nodes":[{"login":"org1","id":"ORG1ID"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	// REST: get organization details
 	mux.HandleFunc("/orgs/org1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"login":"org1","id":321,"default_repository_permission":"admin"}`)
+		if _, err := fmt.Fprintln(w, `{"login":"org1","id":321,"default_repository_permission":"admin"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	// REST: list members
 	mux.HandleFunc("/orgs/org1/members", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `[{"login":"user1","id":123}]`)
+		if _, err := fmt.Fprintln(w, `[{"login":"user1","id":123}]`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	// REST: get membership for user1
 	mux.HandleFunc("/orgs/org1/memberships/user1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"role":"admin"}`)
+		if _, err := fmt.Fprintln(w, `{"role":"admin"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	// REST: get user by id
 	mux.HandleFunc("/users/123", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"login":"user1","name":"User One"}`)
+		if _, err := fmt.Fprintln(w, `{"login":"user1","name":"User One"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	// alias path matching code’s fetch URL (/user/123)
 	mux.HandleFunc("/user/123", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"login":"user1","name":"User One"}`)
+		if _, err := fmt.Fprintln(w, `{"login":"user1","name":"User One"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 
 	srv := httptest.NewServer(mux)

@@ -51,7 +51,11 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			slog.Warn("failed to close CSV file", "error", cerr)
+		}
+	}()
 
 	// Define inactivity threshold for dormancy check
 	const inactivityThreshold = 90 * 24 * time.Hour

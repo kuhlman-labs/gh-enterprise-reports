@@ -37,7 +37,11 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			slog.Error("failed to close CSV file", slog.Any("err", err))
+		}
+	}()
 
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)
 	if err != nil {

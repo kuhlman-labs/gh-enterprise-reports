@@ -50,10 +50,11 @@ func TestUsersReport_FileCreationError(t *testing.T) {
 
 // TestUsersReport_NoUsers should produce only header when no users.
 func TestUsersReport_NoUsers(t *testing.T) {
-	// stub GraphQL server returning no enterprise members
 	muxG := http.NewServeMux()
 	muxG.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"members":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"members":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	gSrv := httptest.NewServer(muxG)
 	defer gSrv.Close()
@@ -61,7 +62,9 @@ func TestUsersReport_NoUsers(t *testing.T) {
 	// stub REST server returning empty audit-log
 	muxR := http.NewServeMux()
 	muxR.HandleFunc("/enterprises/ent/audit-log", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[]`))
+		if _, err := w.Write([]byte(`[]`)); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	rSrv := httptest.NewServer(muxR)
 	defer rSrv.Close()
@@ -88,10 +91,11 @@ func TestUsersReport_NoUsers(t *testing.T) {
 }
 
 func TestUsersReport_SingleUser(t *testing.T) {
-	// stub GraphQL server returning one enterprise member
 	muxG := http.NewServeMux()
 	muxG.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"data":{"enterprise":{"members":{"nodes":[{"login":"user1","name":"User One","createdAt":"2022-01-01T00:00:00Z","user":{"databaseId":1}}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+		if _, err := fmt.Fprintln(w, `{"data":{"enterprise":{"members":{"nodes":[{"login":"user1","name":"User One","createdAt":"2022-01-01T00:00:00Z","user":{"databaseId":1}}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	gSrv := httptest.NewServer(muxG)
 	defer gSrv.Close()
@@ -100,7 +104,9 @@ func TestUsersReport_SingleUser(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	muxR := http.NewServeMux()
 	muxR.HandleFunc("/enterprises/ent/audit-log", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `[{"action":"user.login","actor":"user1","created_at":"%s"}]`, now)
+		if _, err := fmt.Fprintf(w, `[{"action":"user.login","actor":"user1","created_at":"%s"}]`, now); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	})
 	rSrv := httptest.NewServer(muxR)
 	defer rSrv.Close()
