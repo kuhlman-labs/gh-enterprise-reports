@@ -36,22 +36,20 @@ func getHighestPermission(permissions map[string]bool) string {
 // validateFilePath ensures the directory for the given file path exists
 // and the path itself is non‐empty, non‐absolute, and contains no parent refs.
 func validateFilePath(path string) error {
-	// normalize and reject traversal/absolute paths
-	// normalize and reject traversal/absolute paths
 	cleanPath := filepath.Clean(path)
-	if filepath.IsAbs(cleanPath) {
-		return fmt.Errorf("absolute paths not allowed: %s", cleanPath)
+	if cleanPath == "" {
+		return fmt.Errorf("file path cannot be empty")
 	}
 	if strings.Contains(cleanPath, "..") {
 		return fmt.Errorf("invalid file path: contains parent directory reference")
 	}
-	// ensure cleanPath lives underneath the current working directory
-	if rel, err := filepath.Rel(".", cleanPath); err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("file path escapes working directory: %s", cleanPath)
+	// if it's a relative path, ensure it doesn't climb above cwd
+	if !filepath.IsAbs(cleanPath) {
+		if rel, err := filepath.Rel(".", cleanPath); err != nil || strings.HasPrefix(rel, "..") {
+			return fmt.Errorf("file path escapes working directory: %s", cleanPath)
+		}
 	}
-	if cleanPath == "" {
-		return fmt.Errorf("file path cannot be empty")
-	}
+	// now ensure the parent directory exists
 	dir := filepath.Dir(cleanPath)
 	info, err := os.Stat(dir)
 	if err != nil {
