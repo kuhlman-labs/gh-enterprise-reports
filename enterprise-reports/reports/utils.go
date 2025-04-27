@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v70/github"
@@ -33,8 +34,18 @@ func getHighestPermission(permissions map[string]bool) string {
 }
 
 // validateFilePath ensures the directory for the given file path exists
-// and the path itself is non‐empty.
+// and the path itself is non‐empty, non‐absolute, and contains no parent refs.
 func validateFilePath(path string) error {
+	// normalize and reject traversal/absolute paths
+	cleanPath := filepath.Clean(path)
+	if filepath.IsAbs(cleanPath) {
+		return fmt.Errorf("absolute paths not allowed: %s", cleanPath)
+	}
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid file path: contains parent directory reference")
+	}
+	path = cleanPath
+
 	if path == "" {
 		return fmt.Errorf("file path cannot be empty")
 	}

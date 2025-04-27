@@ -15,7 +15,7 @@ import (
 
 func main() {
 	// Open log file in append mode.
-	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		slog.Error("failed to open log file", "error", err)
 		os.Exit(1)
