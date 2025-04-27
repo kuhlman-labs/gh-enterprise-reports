@@ -69,7 +69,7 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 	if err := validateFilePath(path); err != nil {
 		return nil, nil, err
 	}
-
+	// #nosec G304  // safe: path has been validated by validateFilePath
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create CSV file %s: %w", path, err)
