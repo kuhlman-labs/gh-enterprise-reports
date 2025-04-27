@@ -91,7 +91,9 @@ gh enterprise-reports --auth-method token --token <your-token> --enterprise <ent
 
 ## 📊 Sample Output
 
-### Organizations Report
+<details>
+<summary>Organizations Report</summary>
+
 **Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
@@ -106,8 +108,11 @@ gh enterprise-reports organizations --auth-method token --token <your-token> --e
 Organization,Organization ID,Organization Default Repository Permission,Members,Total Members
 org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleName"":""admin""}]",1
 ```
+</details>
 
-### Repositories Report
+<details>
+<summary>Repositories Report</summary>
+
 **Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --repositories
@@ -122,13 +127,15 @@ gh enterprise-reports repositories --auth-method token --token <your-token> --en
 Owner,Repository,Archived,Visibility,Pushed_At,Created_At,Topics,Custom_Properties,Teams
 org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:value},team1
 ```
+</details>
 
-### Teams Report
+<details>
+<summary>Teams Report</summary>
+
 **Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
 ```
-
 or with GitHub CLI:
 ```bash
 gh enterprise-reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug> --teams
@@ -139,8 +146,11 @@ gh enterprise-reports teams --auth-method token --token <your-token> --enterpris
 Team ID,Owner,Team Name,Team Slug,External Group,Members
 1,org1,team1,team1,[group1],[user1,user2]
 ```
+</details>
 
-### Collaborators Report
+<details>
+<summary>Collaborators Report</summary>
+
 **Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --collaborators
@@ -155,8 +165,11 @@ gh enterprise-reports collaborators --auth-method token --token <your-token> --e
 Repository,Collaborators
 org1/repo1,{login:user1,id:1,permission:admin}
 ```
+</details>
 
-### Users Report
+<details>
+<summary>Users Report</summary>
+
 **Command:**
 ```bash
 ./gh-enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --users
@@ -171,6 +184,7 @@ gh enterprise-reports users --auth-method token --token <your-token> --enterpris
 ID,Login,Name,Email,Last Login(90 days),Dormant?
 1,user1,User One,user1@example.com,2023-01-01T00:00:00Z,false
 ```
+</details>
 
 ---
 
