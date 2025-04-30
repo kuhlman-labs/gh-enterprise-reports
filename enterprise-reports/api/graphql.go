@@ -12,7 +12,7 @@ import (
 
 // fetchOrganizationMembershipsWithRole fetches all organization memberships in the given organization using pagination.
 func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *githubv4.Client, orgLogin string) ([]*github.User, error) {
-	slog.Info("fetching organization memberships", "organization", orgLogin)
+	slog.Debug("fetching organization memberships", "organization", orgLogin)
 	// Define the GraphQL query to fetch organization memberships.
 	// The query fetches the first 100 members with their roles and uses pagination to retrieve all members.
 	// It also checks for rate limits after each request.
@@ -22,9 +22,9 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 				Edges []struct {
 					Role string
 					Node struct {
-						Name  string
-						Login string
-						ID    string
+						Name       string
+						Login      string
+						DatabaseID int64
 					}
 				}
 				PageInfo struct {
@@ -55,7 +55,7 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 			memberMap[edge.Node.Login] = &github.User{
 				Login:    &edge.Node.Login,
 				Name:     &edge.Node.Name,
-				NodeID:   &edge.Node.ID,
+				ID:       &edge.Node.DatabaseID,
 				RoleName: &edge.Role,
 			}
 		}
@@ -78,7 +78,7 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 	for _, member := range memberMap {
 		allMemberships = append(allMemberships, member)
 	}
-	slog.Info("fetched all memberships",
+	slog.Debug("fetched all memberships",
 		"organization", orgLogin,
 		"totalMemberships", len(allMemberships),
 	)

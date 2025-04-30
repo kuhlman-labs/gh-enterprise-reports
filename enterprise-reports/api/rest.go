@@ -310,7 +310,7 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 		membershipList = append(membershipList, member)
 	}
 
-	slog.Debug("fetched all memberships", "organizationLogin", orgLogin, "count", len(membershipList))
+	slog.Debug("fetched all memberships", "organization", orgLogin, "count", len(membershipList))
 
 	return membershipList, nil
 }
@@ -368,7 +368,7 @@ func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin 
 
 // FetchRepoCollaborators retrieves all collaborators for the specified repository.
 func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo *github.Repository) ([]*github.User, error) {
-	slog.Debug("fetching repository collaborators", "repository", repo.GetFullName())
+	slog.Info("fetching repository collaborators", "repository", repo.GetFullName())
 
 	opts := &github.ListCollaboratorsOptions{
 		ListOptions: github.ListOptions{

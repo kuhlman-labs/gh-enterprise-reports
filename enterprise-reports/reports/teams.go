@@ -4,15 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 
 	"log/slog"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
 	"github.com/shurcooL/githubv4"
+	"golang.org/x/time/rate"
 )
 
 type TeamReport struct {
@@ -22,30 +20,13 @@ type TeamReport struct {
 	Members        []*github.User
 }
 
-// setMembers sets the members of the team.
-func (t *TeamReport) setMembers(members []*github.User) {
-	// Check if members are nil
-	if members == nil {
-		members = []*github.User{}
-	}
-	t.Members = members
-}
-
-// setExternalGroups sets the external groups of the team.
-func (t *TeamReport) setExternalGroups(externalGroups *github.ExternalGroupList) {
-	// Check if external groups are nil
-	if externalGroups == nil {
-		externalGroups = &github.ExternalGroupList{}
-	}
-	t.ExternalGroups = externalGroups
-}
-
 // TeamsReport generates a CSV report of teams for the specified Enterprise.
-// It includes columns for Team ID, Organization, Team Name, Team Slug, External Group, and Members.
-func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string) error {
-	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("file", filename))
-
-	// Create CSV file to write the report
+func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
+	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
+	// Validate output path early to catch file creation errors before API calls
+	if err := validateFilePath(filename); err != nil {
+		return err
+	}
 	header := []string{
 		"Team ID",
 		"Owner",
@@ -54,158 +35,80 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		"External Group",
 		"Members",
 	}
-
-	file, writer, err := createCSVFileWithHeader(filename, header)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-
-	defer func() {
-		if cerr := file.Close(); cerr != nil {
-			slog.Warn("failed to close CSV file", "error", cerr)
-		}
-	}()
-
-	// Get all organizations in the enterprise
+	// Fetch organizations
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
 	if err != nil {
-		return fmt.Errorf("failed to get organizations for enterprise %s: %w", enterpriseSlug, err)
+		return fmt.Errorf("failed to fetch organizations: %w", err)
 	}
-
-	// Channels for team processing
-	teamChan := make(chan *TeamReport, 1000)    // buffer size to avoid blocking
-	resultsChan := make(chan *TeamReport, 1000) // buffer size to avoid blocking
-
-	var teamWg sync.WaitGroup
-	var teamCount int64
-
-	for i := 0; i < 20; i++ {
-		teamWg.Add(1)
-		go processTeams(ctx, &teamCount, &teamWg, teamChan, resultsChan, restClient)
-	}
-
-	// Close resultsChan when all teams are processed
-	go func() {
-		teamWg.Wait()
-		slog.Info("processing teams complete", slog.Int64("total", teamCount))
-		close(resultsChan)
-	}()
-
-	// Enqueue teams for processing
-	go func() {
-		defer close(teamChan)
-		ticker := time.NewTicker(5 * time.Millisecond)
-		defer ticker.Stop()
-		for _, org := range orgs {
-			select {
-			case <-ctx.Done():
-				slog.Warn("context cancelled, stopping team processing")
-				return
-			case <-ticker.C:
-				teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
-				if err != nil {
-					slog.Warn("failed to fetch teams for org", "org", org.GetLogin(), "error", err)
-					continue
-				}
-				if len(teams) == 0 {
-					slog.Debug("no teams found for org", "org", org.GetLogin())
-					continue
-				}
-				for _, team := range teams {
-					teamChan <- &TeamReport{
-						Team:         team,
-						Organization: org,
-					}
-				}
-			}
+	// Prepare initial items: organization teams
+	var items []*TeamReport
+	for _, org := range orgs {
+		slog.Info("fetching teams for org", "org", org.GetLogin())
+		teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
+		if err != nil {
+			slog.Debug("failed to fetch teams for org", "org", org.GetLogin(), "err", err)
+			continue
 		}
-	}()
-
-	for team := range resultsChan {
-
-		// Build members string or "N/A"
-		var membersStr string
-		if len(team.Members) == 0 {
-			membersStr = "N/A"
+		for _, t := range teams {
+			items = append(items, &TeamReport{Team: t, Organization: org})
+		}
+	}
+	// Processor: fetch members and external groups
+	processor := func(ctx context.Context, tr *TeamReport) (*TeamReport, error) {
+		slog.Info("processing team", "team", tr.GetSlug())
+		members, err := api.FetchTeamMembers(ctx, restClient, tr.Team, tr.GetLogin())
+		if err != nil {
+			slog.Debug("skipping membership fetch", "team", tr.GetSlug(), "err", err)
+			tr.Members = []*github.User{} // Initialize to empty slice on error
 		} else {
-			mLogins := make([]string, len(team.Members))
-			for i, member := range team.Members {
-				mLogins[i] = member.GetLogin()
-			}
-			membersStr = strings.Join(mLogins, ", ")
+			tr.Members = members // Assign fetched members if successful
 		}
 
-		// Build external‐groups string or "N/A"
-		var externalGroupsStr string
-		if team.ExternalGroups == nil || len(team.ExternalGroups.Groups) == 0 {
-			externalGroupsStr = "N/A"
+		ext, err := api.FetchExternalGroups(ctx, restClient, tr.GetLogin(), tr.GetSlug())
+		if err != nil {
+			slog.Debug("skipping external groups fetch", "team", tr.GetSlug(), "err", err)
+			tr.ExternalGroups = &github.ExternalGroupList{} // Initialize to empty struct on error
 		} else {
-			gNames := make([]string, len(team.ExternalGroups.Groups))
-			for i, group := range team.ExternalGroups.Groups {
-				gNames[i] = group.GetGroupName()
-			}
-			externalGroupsStr = strings.Join(gNames, ", ")
+			tr.ExternalGroups = ext // Assign fetched external groups if successful
 		}
 
-		// Prepare CSV row
-		rowData := []string{
-			fmt.Sprintf("%d", team.Team.GetID()),
-			team.GetLogin(),
-			team.Team.GetName(),
-			team.GetSlug(),
-			externalGroupsStr,
-			membersStr,
+		return tr, nil
+	}
+	// Formatter: build CSV row
+	formatter := func(tr *TeamReport) []string {
+		// members
+		mem := "N/A"
+		if len(tr.Members) > 0 {
+			var logins []string
+			for _, m := range tr.Members {
+				logins = append(logins, m.GetLogin())
+			}
+			mem = strings.Join(logins, ", ")
 		}
-		// Write the row to the CSV file
-		if err := writer.Write(rowData); err != nil {
-			return fmt.Errorf("failed to write CSV row: %w", err)
+		// external groups
+		eg := "N/A"
+		if tr.ExternalGroups != nil && len(tr.ExternalGroups.Groups) > 0 {
+			var names []string
+			for _, g := range tr.ExternalGroups.Groups {
+				names = append(names, g.GetGroupName())
+			}
+			eg = strings.Join(names, ", ")
+		}
+		return []string{
+			fmt.Sprintf("%d", tr.Team.GetID()),
+			tr.GetLogin(),
+			tr.Team.GetName(),
+			tr.GetSlug(),
+			eg,
+			mem,
 		}
 	}
-	// Ensure all CSV data is written out
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("failed to flush CSV writer: %w", err)
-	}
 
-	slog.Info("completed teams report", slog.String("file", filename))
-	return nil
-}
+	// Create a limiter for rate limiting - aiming for ~5 teams/sec
+	// (Consumes 10 REST points/sec, below the 15 points/sec limit)
+	// Burst matches worker count for responsiveness.
+	limiter := rate.NewLimiter(rate.Limit(5), workerCount) // e.g., 5 requests/sec, burst of workerCount
 
-// processTeams processes the teams for a given organization and sends to the team channel.
-func processTeams(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *TeamReport, out chan<- *TeamReport, restClient *github.Client) {
-	defer wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Warn("context cancelled, stopping processing teams")
-			return
-		case team, ok := <-in:
-			if !ok {
-				slog.Debug("no more teams to process")
-				return
-			}
-
-			// Fetch members and external groups for each team
-			members, err := api.FetchTeamMembers(ctx, restClient, team.Team, team.GetLogin())
-			if err != nil {
-				slog.Debug("Skipping team due to error fetching members", "error", err, "team", team.GetSlug())
-				members = nil
-			}
-			externalGroups, err := api.FetchExternalGroups(ctx, restClient, team.GetLogin(), team.GetSlug())
-			if err != nil {
-				slog.Debug("Skipping external groups due to error", "error", err, "team", team.GetSlug())
-				externalGroups = nil
-			}
-
-			// Set members and external groups for the team
-			team.setMembers(members)
-			team.setExternalGroups(externalGroups)
-			// Send the team report to the output channel
-			out <- team
-			// Increment the team count
-			atomic.AddInt64(count, 1)
-			slog.Info("processing team", slog.String("team", team.GetSlug()))
-
-		}
-	}
+	// Run the report
+	return RunReport(ctx, items, processor, formatter, limiter, workerCount, filename, header)
 }

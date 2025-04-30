@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"sync/atomic"
-
 	"log/slog"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
 	"github.com/shurcooL/githubv4"
+	"golang.org/x/time/rate"
 )
 
 type OrgReport struct {
@@ -19,11 +17,21 @@ type OrgReport struct {
 	Members      []*github.User
 }
 
-// OrganizationsReport generates a CSV report for all enterprise organizations, including organization details and memberships.
-func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, enterpriseSlug, filename string) error {
-	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename))
+// OrgMemberInfo represents a simplified organization member for CSV output
+type OrgMemberInfo struct {
+	Login    string `json:"login"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	RoleName string `json:"roleName"`
+}
 
-	// Create CSV file to write the report
+// OrganizationsReport generates a CSV report for all enterprise organizations.
+func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, enterpriseSlug, filename string, workerCount int) error {
+	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
+	// Validate output path early to catch file creation errors before API calls
+	if err := validateFilePath(filename); err != nil {
+		return err
+	}
 	header := []string{
 		"Organization",
 		"Organization ID",
@@ -32,147 +40,84 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 		"Total Members",
 	}
 
-	file, writer, err := createCSVFileWithHeader(filename, header)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %w", err)
-	}
-
-	defer func() {
-		if err := file.Close(); err != nil {
-			slog.Error("failed to close CSV file", slog.Any("err", err))
-		}
-	}()
-
-	// Fetch all enterprise organizations
+	// Fetch initial list of orgs
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
 	}
 
-	// Channels for organization processing
-	orgChan := make(chan *OrgReport, len(orgs))
-	resultChan := make(chan *OrgReport, len(orgs))
-
-	// Use a WaitGroup to wait for all workers to finish
-	var orgWg sync.WaitGroup
-	var orgCount int64
-
-	// Start workers
-	numWorkers := 10
-	for i := 0; i < numWorkers; i++ {
-		orgWg.Add(1)
-		go processOrganization(ctx, &orgCount, &orgWg, orgChan, resultChan, restClient)
-	}
-
-	// Enqueue organizations for processing
-	go func() {
-		for _, org := range orgs {
-			orgChan <- &OrgReport{
-				Organization: org}
-		}
-		close(orgChan)
-	}()
-
-	// Collect results
-	go func() {
-		orgWg.Wait()
-		slog.Info("processing organizations complete", "total", atomic.LoadInt64(&orgCount))
-		close(resultChan)
-	}()
-
-	// Process results
-	for result := range resultChan {
-
-		rowData := []string{
-			result.Organization.GetLogin(),
-			fmt.Sprintf("%d", result.Organization.GetID()),
-			result.Organization.GetDefaultRepoPermission(),
-		}
-
-		var membersString, totalMembers string
-
-		// build JSON-encoded member list
-		var members []struct {
-			Login    string `json:"login"`
-			ID       int64  `json:"id"`
-			Name     string `json:"name"`
-			RoleName string `json:"roleName"`
-		}
-		for _, member := range result.Members {
-			members = append(members, struct {
-				Login    string `json:"login"`
-				ID       int64  `json:"id"`
-				Name     string `json:"name"`
-				RoleName string `json:"roleName"`
-			}{
-				Login:    member.GetLogin(),
-				ID:       member.GetID(),
-				Name:     member.GetName(),
-				RoleName: member.GetRoleName(),
-			})
-		}
-		data, err := json.Marshal(members)
+	// Processor: enrich organization with details and members
+	processor := func(ctx context.Context, org *github.Organization) (*OrgReport, error) {
+		slog.Info("processing organization", "org", org.GetLogin())
+		info, err := api.FetchOrganization(ctx, restClient, org.GetLogin())
 		if err != nil {
-			slog.Warn("Failed to marshal members to JSON", "err", err)
-			membersString = "[]"
+			// Log the error but return a report with basic info and empty members.
+			// The original 'org' from FetchEnterpriseOrgs lacks DefaultRepoPermission.
+			slog.Warn("failed to fetch organization details, reporting basic info", "org", org.GetLogin(), "err", err)
+			// Use the input 'org' which has at least Login and ID. Mark members as empty.
+			// The formatter will handle the missing DefaultRepoPermission.
+			return &OrgReport{Organization: org, Members: []*github.User{}}, nil // Return non-nil report, nil error
+		}
+
+		members, err := api.FetchOrganizationMemberships(ctx, restClient, org.GetLogin())
+		if err != nil {
+			// Log the error but return the fetched org details with empty members.
+			slog.Warn("failed to fetch memberships, reporting org details with empty members", "org", org.GetLogin(), "err", err)
+			return &OrgReport{Organization: info, Members: []*github.User{}}, nil // Return non-nil report, nil error
+		}
+		return &OrgReport{Organization: info, Members: members}, nil
+	}
+
+	// Formatter: build CSV row from OrgReport
+	formatter := func(r *OrgReport) []string {
+		var membersStr string
+		var defaultPermStr string
+
+		// Check if Members slice is nil or empty
+		if len(r.Members) == 0 {
+			membersStr = "N/A" // Set to "N/A" if no members
 		} else {
-			membersString = string(data)
-		}
-		totalMembers = fmt.Sprintf("%d", len(result.Members))
-
-		rowData = append(rowData, membersString, totalMembers)
-
-		if err := writer.Write(rowData); err != nil {
-			return fmt.Errorf("failed to write row to CSV: %w", err)
-		}
-
-		slog.Debug("processed organization", "organization", result.Organization.GetLogin(), "members", len(result.Members))
-	}
-
-	// Ensure all CSV data is written out
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("failed to flush CSV writer: %w", err)
-	}
-
-	slog.Info("organizations report complete", slog.String("filename", filename))
-	return nil
-}
-
-// processOrganization processes the orgChannel and fetches organization details and memberships.
-func processOrganization(ctx context.Context, count *int64, wg *sync.WaitGroup, in <-chan *OrgReport, out chan<- *OrgReport, restClient *github.Client) {
-	defer wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Warn("context canceled, stopping organization processing")
-			return
-		case orgReport, ok := <-in:
-			if !ok {
-				slog.Debug("no more organizations to process")
-				return
+			// Only marshal if there are members
+			var membersList []OrgMemberInfo
+			for _, m := range r.Members {
+				// Add a nil check for individual members just in case
+				if m == nil {
+					continue
+				}
+				membersList = append(membersList, OrgMemberInfo{m.GetLogin(), m.GetID(), m.GetName(), m.GetRoleName()})
 			}
-
-			orgInfo, err := api.FetchOrganization(ctx, restClient, orgReport.Organization.GetLogin())
+			data, err := json.Marshal(membersList)
 			if err != nil {
-				slog.Warn("failed to fetch organization details; marking as unavailable", "organization", orgReport.Organization.GetLogin(), "err", err)
-				continue
+				slog.Error("failed to marshal members list", "org", r.Organization.GetLogin(), "err", err)
+				membersStr = "ERROR_MARSHAL" // Indicate an error during marshaling
+			} else {
+				membersStr = string(data) // Use JSON string if marshaling succeeded
 			}
+		}
 
-			members, err := api.FetchOrganizationMemberships(ctx, restClient, orgReport.Organization.GetLogin())
-			if err != nil {
-				slog.Warn("failed to fetch memberships; marking as unavailable", "organization", orgReport.Organization.GetLogin(), "err", err)
-				continue
-			}
-			// Update the orgReport with fetched data
-			orgReport.Organization = orgInfo
-			orgReport.Members = members
+		// Handle potentially missing DefaultRepoPermission
+		// GetDefaultRepoPermission returns "" if the field is nil.
+		defaultPerm := r.Organization.GetDefaultRepoPermission()
+		if defaultPerm == "" {
+			defaultPermStr = "N/A" // Use "N/A" if permission wasn't fetched or is empty
+		} else {
+			defaultPermStr = defaultPerm
+		}
 
-			atomic.AddInt64(count, 1)
-			slog.Info("processing organization", "organization", orgReport.Organization.GetLogin())
-
-			out <- orgReport
+		return []string{
+			r.Organization.GetLogin(),
+			fmt.Sprintf("%d", r.Organization.GetID()),
+			defaultPermStr,                    // Use the determined defaultPermStr
+			membersStr,                        // Use the determined membersStr
+			fmt.Sprintf("%d", len(r.Members)), // Total members
 		}
 	}
 
+	// Create a limiter for rate limiting - aiming for ~5 orgs/sec
+	// (Consumes 10 REST points/sec, below the 15 points/sec limit)
+	// Burst matches worker count for responsiveness.
+	limiter := rate.NewLimiter(rate.Limit(5), workerCount) // e.g., 5 requests/sec, burst of workerCount
+
+	// Run the report
+	return RunReport(ctx, orgs, processor, formatter, limiter, workerCount, filename, header)
 }

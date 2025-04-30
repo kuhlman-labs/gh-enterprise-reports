@@ -83,20 +83,32 @@ gh enterprise-reports --auth-method token --token <your-token> --enterprise <ent
 
 ### 🔧 Flags
 
-| Flag                       | Description                                                                 |
-|----------------------------|-----------------------------------------------------------------------------|
-| `--auth-method`            | Authentication method (`token` or `app`, defaults to `token`).             |
-| `--token`                  | Personal access token (required if `auth-method` is `token`).              |
-| `--app-id`                 | GitHub App ID (required if `auth-method` is `app`).                        |
-| `--app-private-key-file`   | Path to the GitHub App private key file (required if `auth-method` is `app`). |
-| `--app-installation-id`    | GitHub App installation ID (required if `auth-method` is `app`).           |
-| `--enterprise`             | Enterprise slug (required).                                                |
-| `--organizations`          | Generate the organizations report.                                         |
-| `--repositories`           | Generate the repositories report.                                          |
-| `--teams`                  | Generate the teams report.                                                 |
-| `--collaborators`          | Generate the collaborators report.                                         |
-| `--users`                  | Generate the users report.                                                 |
-| `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
+ | Flag                       | Description                                                                 |
+ |----------------------------|-----------------------------------------------------------------------------|
+ | `--auth-method`            | Authentication method (`token` or `app`, defaults to `token`).             |
+ | `--token`                  | Personal access token (required if `auth-method` is `token`).              |
+ | `--app-id`                 | GitHub App ID (required if `auth-method` is `app`).                        |
+ | `--app-private-key-file`   | Path to the GitHub App private key file (required if `auth-method` is `app`). |
+ | `--app-installation-id`    | GitHub App installation ID (required if `auth-method` is `app`).           |
+ | `--enterprise`             | Enterprise slug (required).                                                |
+ | `--organizations`          | Generate the organizations report.                                         |
+ | `--repositories`           | Generate the repositories report.                                          |
+ | `--teams`                  | Generate the teams report.                                                 |
+ | `--collaborators`          | Generate the collaborators report.                                         |
+ | `--users`                  | Generate the users report.                                                 |
+ | `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
+ | `--workers`                | Number of concurrent workers for fetching data (default 5).                |
+
+### Worker Count Explanation
+
+The `--workers` flag controls the number of concurrent workers used to fetch data for the selected reports. Increasing the worker count can speed up report generation, especially for large enterprises, by making more API requests in parallel.
+
+**When to adjust:**
+
+- **Increase workers:** If reports are running slowly and you are not hitting GitHub API rate limits.
+- **Decrease workers:** If you are frequently encountering rate limit errors (HTTP 429 or 403). Reducing the number of workers will slow down the report but make it less likely to hit rate limits.
+
+The optimal number depends on your enterprise size, network conditions, and GitHub API rate limits. Start with the default (5) and adjust as needed.
 
 ---
 
