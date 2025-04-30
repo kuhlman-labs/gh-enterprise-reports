@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
 	"github.com/shurcooL/githubv4"
+	"golang.org/x/time/rate"
 )
 
 // getHighestPermission returns the highest permission level from the provided permissions map.
@@ -115,4 +118,121 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 	)
 
 	return dormant, nil
+}
+
+// ProcessorFunc processes an input item to an output record.
+type ProcessorFunc[I any, O any] func(ctx context.Context, item I) (O, error)
+
+// FormatterFunc formats an output record into a CSV row.
+type FormatterFunc[O any] func(output O) []string
+
+// RunReport processes items concurrently using the provided processor and formatter,
+// writing results to a CSV file with the given header. It respects the provided rate limiter.
+func RunReport[I any, O any](
+	ctx context.Context,
+	items []I,
+	processor ProcessorFunc[I, O],
+	formatter FormatterFunc[O],
+	limiter *rate.Limiter, // Add rate limiter parameter
+	workerCount int,
+	filename string,
+	header []string,
+) error {
+	slog.Info("starting report", slog.String("filename", filename))
+	file, writer, err := createCSVFileWithHeader(filename, header)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			slog.Error("failed to close CSV file", slog.Any("err", cerr))
+		}
+	}()
+
+	in := make(chan I, len(items))
+	out := make(chan O, len(items))
+	var wg sync.WaitGroup
+	var count int64
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					slog.Warn("context canceled, stopping processing")
+					return
+				case item, ok := <-in:
+					if !ok {
+						return
+					}
+
+					// Wait for the rate limiter
+					err := limiter.Wait(ctx)
+					if err != nil {
+						slog.Warn("rate limiter wait failed", slog.Any("err", err))
+						// Decide if you want to return or continue based on the error
+						// If context is canceled, this will return an error.
+						if ctx.Err() != nil {
+							return // Context was canceled while waiting
+						}
+						// Handle other potential limiter errors if necessary, or just log and continue
+						continue
+					}
+
+					result, err := processor(ctx, item)
+					if err != nil {
+						slog.Warn("processing item failed", slog.Any("item", item), slog.Any("err", err))
+						continue // Skip this item on processor error
+					}
+					atomic.AddInt64(&count, 1)
+					// Use a select to prevent blocking indefinitely if the context is canceled
+					// while waiting to send to the out channel.
+					select {
+					case out <- result:
+					case <-ctx.Done():
+						slog.Warn("context canceled, discarding result")
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+	InputLoop: // Labeled break for the outer loop
+		for _, item := range items {
+			// Use a select to prevent blocking indefinitely if the context is canceled
+			// while waiting to send to the in channel.
+			select {
+			case in <- item:
+			case <-ctx.Done():
+				slog.Warn("context canceled during input sending, stopping early")
+				break InputLoop // Use labeled break to exit the for loop
+			}
+		}
+		close(in) // Close in channel regardless of context cancellation
+		wg.Wait()
+		slog.Info("processing complete", slog.Int64("total", count))
+		close(out)
+	}()
+
+	for result := range out {
+		row := formatter(result)
+		if err := writer.Write(row); err != nil {
+			// It might be better to log the error and continue,
+			// rather than failing the entire report for one write error.
+			slog.Error("failed to write row to CSV", slog.Any("err", err))
+			continue // Continue processing other results
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		// Log the flush error, but the report might still be partially useful.
+		slog.Error("failed to flush CSV writer", slog.Any("err", err))
+	}
+	slog.Info("report complete", slog.String("filename", filename))
+	return writer.Error() // Return the flush error if any occurred
 }

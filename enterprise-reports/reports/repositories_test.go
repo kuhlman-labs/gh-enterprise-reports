@@ -21,7 +21,7 @@ import (
 
 // TestRepositoryReport_FileCreationError should fail if the output path is invalid.
 func TestRepositoryReport_FileCreationError(t *testing.T) {
-	err := RepositoryReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv")
+	err := RepositoryReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -33,7 +33,7 @@ func TestRepositoryReport_GraphQLFetchError(t *testing.T) {
 	defer srv.Close()
 
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
-	err := RepositoryReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"))
+	err := RepositoryReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -55,7 +55,7 @@ func TestRepositoryReport_NoRepos(t *testing.T) {
 	restClient.BaseURL = baseURL
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out)
+	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	bs, err := os.ReadFile(out)
@@ -113,7 +113,7 @@ func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out)
+	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)

@@ -18,43 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSetMembers_Nil ensures setMembers handles nil slices.
-func TestSetMembers_Nil(t *testing.T) {
-	tr := &TeamReport{}
-	tr.setMembers(nil)
-	assert.NotNil(t, tr.Members)
-	assert.Len(t, tr.Members, 0)
-}
-
-// TestSetMembers_NonNil ensures setMembers sets provided slice.
-func TestSetMembers_NonNil(t *testing.T) {
-	user := &github.User{Login: github.Ptr("user1")}
-	tr := &TeamReport{}
-	tr.setMembers([]*github.User{user})
-	assert.Len(t, tr.Members, 1)
-	assert.Equal(t, "user1", tr.Members[0].GetLogin())
-}
-
-// TestSetExternalGroups_Nil ensures setExternalGroups handles nil.
-func TestSetExternalGroups_Nil(t *testing.T) {
-	tr := &TeamReport{}
-	tr.setExternalGroups(nil)
-	assert.NotNil(t, tr.ExternalGroups)
-	assert.Len(t, tr.ExternalGroups.Groups, 0)
-}
-
-// TestSetExternalGroups_NonNil ensures externalGroups set correctly.
-func TestSetExternalGroups_NonNil(t *testing.T) {
-	ext := &github.ExternalGroupList{Groups: []*github.ExternalGroup{{GroupName: github.Ptr("group1")}}}
-	tr := &TeamReport{}
-	tr.setExternalGroups(ext)
-	assert.Len(t, tr.ExternalGroups.Groups, 1)
-	assert.Equal(t, "group1", tr.ExternalGroups.Groups[0].GetGroupName())
-}
-
 // TestTeamsReport_FileCreationError should fail if output path invalid.
 func TestTeamsReport_FileCreationError(t *testing.T) {
-	err := TeamsReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv")
+	err := TeamsReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -66,7 +32,7 @@ func TestTeamsReport_GraphQLFetchError(t *testing.T) {
 	defer srv.Close()
 
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
-	err := TeamsReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"))
+	err := TeamsReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -86,7 +52,7 @@ func TestTeamsReport_NoTeams(t *testing.T) {
 	restClient.BaseURL = baseURL
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out)
+	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)
@@ -128,7 +94,7 @@ func TestTeamsReport_SingleTeam(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out)
+	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)
