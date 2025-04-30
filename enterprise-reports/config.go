@@ -2,6 +2,7 @@ package enterprisereports
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -26,6 +27,7 @@ type Config struct {
 	Teams                   bool   `mapstructure:"teams"`
 	Collaborators           bool   `mapstructure:"collaborators"`
 	Users                   bool   `mapstructure:"users"`
+	Workers                 int    `mapstructure:"workers"` // Workers for all reports
 	AuthMethod              string `mapstructure:"auth-method"`
 	Token                   string `mapstructure:"token"`
 	GithubAppID             int64  `mapstructure:"app-id"`
@@ -38,7 +40,7 @@ type Config struct {
 
 // Validate checks for required flags based on the chosen authentication method.
 func (c *Config) Validate() error {
-	var errs []string
+	var errs []error
 
 	// default empty log‐level to "info"
 	if c.LogLevel == "" {
@@ -48,7 +50,7 @@ func (c *Config) Validate() error {
 
 	// enterprise slug
 	if c.EnterpriseSlug == "" {
-		errs = append(errs, "enterprise flag is required")
+		errs = append(errs, errors.New("enterprise flag is required"))
 	}
 
 	// normalize & validate auth method
@@ -56,39 +58,39 @@ func (c *Config) Validate() error {
 	switch c.AuthMethod {
 	case "token":
 		if c.Token == "" {
-			errs = append(errs, "token is required when using token authentication")
+			errs = append(errs, errors.New("token is required when using token authentication"))
 		}
 	case "app":
 		// GitHub App authentication requires app-id, app-private-key, and app-installation-id
 		if c.GithubAppID == 0 && c.GithubAppPrivateKey == "" && c.GithubAppInstallationID == 0 {
-			errs = append(errs, "app-id, app-private-key, and app-installation-id are required when using GitHub App authentication")
+			errs = append(errs, errors.New("app-id, app-private-key, and app-installation-id are required when using GitHub App authentication"))
 		} else {
 			if c.GithubAppID == 0 {
-				errs = append(errs, "app-id is required when using GitHub App authentication")
+				errs = append(errs, errors.New("app-id is required when using GitHub App authentication"))
 			}
 			if c.GithubAppPrivateKey == "" {
-				errs = append(errs, "app-private-key-file is required when using GitHub App authentication")
+				errs = append(errs, errors.New("app-private-key-file is required when using GitHub App authentication"))
 			} else if _, err := os.Stat(c.GithubAppPrivateKey); err != nil {
-				errs = append(errs, fmt.Sprintf("app-private-key-file %q does not exist", c.GithubAppPrivateKey))
+				errs = append(errs, fmt.Errorf("app-private-key-file %q does not exist", c.GithubAppPrivateKey))
 			}
 			if c.GithubAppInstallationID == 0 {
-				errs = append(errs, "app-installation-id is required when using GitHub App authentication")
+				errs = append(errs, errors.New("app-installation-id is required when using GitHub App authentication"))
 			}
 		}
 	default:
-		errs = append(errs, fmt.Sprintf("unknown auth-method %q: please use 'token' or 'app'", c.AuthMethod))
+		errs = append(errs, fmt.Errorf("unknown auth-method %q: please use 'token' or 'app'", c.AuthMethod))
 	}
 
 	// at least one report
 	if !c.Organizations && !c.Repositories && !c.Teams && !c.Collaborators && !c.Users {
-		errs = append(errs, "no report selected: please specify at least one of: organizations, repositories, teams, collaborators, users")
+		errs = append(errs, errors.New("no report selected: please specify at least one of: organizations, repositories, teams, collaborators, users"))
 	}
 
 	// BaseURL validation & trimming
 	if c.BaseURL != "" {
 		u, err := url.Parse(c.BaseURL)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			errs = append(errs, fmt.Sprintf("base-url %q is not a valid URL", c.BaseURL))
+			errs = append(errs, fmt.Errorf("base-url %q is not a valid URL", c.BaseURL))
 		} else {
 			c.BaseURL = strings.TrimSuffix(c.BaseURL, "/")
 		}
@@ -97,11 +99,11 @@ func (c *Config) Validate() error {
 	// log-level validation
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true, "fatal": true, "panic": true}
 	if !validLevels[c.LogLevel] {
-		errs = append(errs, fmt.Sprintf("log-level %q is not one of: debug, info, warn, error, fatal, panic", c.LogLevel))
+		errs = append(errs, fmt.Errorf("log-level %q is not one of: debug, info, warn, error, fatal, panic", c.LogLevel))
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("validation errors: %s", strings.Join(errs, "; "))
+		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -114,6 +116,9 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	viper.SetDefault("teams", false)
 	viper.SetDefault("collaborators", false)
 	viper.SetDefault("users", false)
+	// Worker count default
+	viper.SetDefault("workers", 5)
+
 	viper.SetDefault("log-level", "info")
 	viper.SetDefault("base-url", "https://api.github.com")
 	viper.SetDefault("auth-method", "token")
@@ -129,6 +134,8 @@ func InitializeFlags(rootCmd *cobra.Command, config *Config) {
 	rootCmd.Flags().BoolVar(&config.Teams, "teams", false, "Run Teams report")
 	rootCmd.Flags().BoolVar(&config.Collaborators, "collaborators", false, "Run Collaborators report")
 	rootCmd.Flags().BoolVar(&config.Users, "users", false, "Run Users report")
+	// Worker count flag
+	rootCmd.Flags().IntVar(&config.Workers, "workers", config.Workers, "Number of concurrent workers for fetching data (default 5)")
 
 	//Log-level flag.
 	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "info", "Set log level (debug, info, warn, error, fatal, panic)")
@@ -207,7 +214,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Organizations {
 		runReport("organizations", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "organizations")
-			if err := reports.OrganizationsReport(ctx, graphQLClient, restClient, conf.EnterpriseSlug, fileName); err != nil {
+			if err := reports.OrganizationsReport(ctx, graphQLClient, restClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
 				slog.Error("failed to run organizations report", slog.Any("err", err))
 			}
 		})
@@ -215,7 +222,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Repositories {
 		runReport("repositories", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "repositories")
-			if err := reports.RepositoryReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+			if err := reports.RepositoryReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
 				slog.Error("failed to run repositories report", slog.Any("err", err))
 			}
 		})
@@ -223,7 +230,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Teams {
 		runReport("teams", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "teams")
-			if err := reports.TeamsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+			if err := reports.TeamsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
 				slog.Error("failed to run teams report", slog.Any("err", err))
 			}
 		})
@@ -231,7 +238,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Collaborators {
 		runReport("collaborators", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "collaborators")
-			if err := reports.CollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+			if err := reports.CollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
 				slog.Error("failed to run collaborators report", slog.Any("err", err))
 			}
 		})
@@ -239,7 +246,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Users {
 		runReport("users", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "users")
-			if err := reports.UsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName); err != nil {
+			if err := reports.UsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
 				slog.Error("failed to run users report", slog.Any("err", err))
 			}
 		})

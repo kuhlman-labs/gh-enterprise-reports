@@ -23,7 +23,7 @@ func TestCollaboratorsReport_FileCreationError(t *testing.T) {
 	ctx := context.Background()
 	// invalid directory to force createCSVFileWithHeader error
 	invalidPath := "/this/path/does/not/exist/report.csv"
-	err := CollaboratorsReport(ctx, nil, nil, "ent", invalidPath)
+	err := CollaboratorsReport(ctx, nil, nil, "ent", invalidPath, 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -40,7 +40,7 @@ func TestCollaboratorsReport_GraphQLFetchError(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := CollaboratorsReport(context.Background(), nil, graphClient, "ent", filePath)
+	err := CollaboratorsReport(context.Background(), nil, graphClient, "ent", filePath, 1) // Add workerCount=1
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to fetch enterprise orgs")
 }
@@ -61,7 +61,7 @@ func TestCollaboratorsReport_NoOrgs(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := CollaboratorsReport(context.Background(), restClient, graphClient, "ent", filePath)
+	err := CollaboratorsReport(context.Background(), restClient, graphClient, "ent", filePath, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)
@@ -114,7 +114,7 @@ func TestCollaboratorsReport_SingleRepoSingleCollaborator(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := CollaboratorsReport(context.Background(), restClient, graphClient, "ent", filePath)
+	err := CollaboratorsReport(context.Background(), restClient, graphClient, "ent", filePath, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)

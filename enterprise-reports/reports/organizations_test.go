@@ -23,7 +23,7 @@ import (
 func TestOrganizationsReport_FileCreationError(t *testing.T) {
 	ctx := context.Background()
 	invalidPath := "/this/path/does/not/exist/report.csv"
-	err := OrganizationsReport(ctx, nil, nil, "ent", invalidPath)
+	err := OrganizationsReport(ctx, nil, nil, "ent", invalidPath, 1)
 	require.Error(t, err)
 }
 
@@ -40,7 +40,7 @@ func TestOrganizationsReport_GraphQLFetchError(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath)
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to fetch organizations")
 }
@@ -67,7 +67,7 @@ func TestOrganizationsReport_NoOrgs(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath)
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)
@@ -139,7 +139,7 @@ func TestOrganizationsReport_SingleOrgSingleMember(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
 
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath)
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)

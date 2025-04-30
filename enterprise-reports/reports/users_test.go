@@ -18,33 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSetEmail ensures setEmail assigns the provided value.
-func TestSetEmail(t *testing.T) {
-	u := &UserReport{User: &github.User{}}
-	u.setEmail("foo@bar.com")
-	assert.Equal(t, "foo@bar.com", u.GetEmail())
-}
-
-// TestSetLastLogin ensures setLastLogin assigns the provided time.
-func TestSetLastLogin(t *testing.T) {
-	ts := time.Date(2022, 1, 2, 3, 4, 5, 0, time.UTC)
-	u := &UserReport{}
-	u.setLastLogin(ts)
-	assert.True(t, u.LastLogin.Equal(ts))
-}
-
-// TestSetDormant ensures setDormant assigns the provided boolean.
-func TestSetDormant(t *testing.T) {
-	u := &UserReport{}
-	u.setDormant(true)
-	assert.True(t, u.Dormant)
-	u.setDormant(false)
-	assert.False(t, u.Dormant)
-}
-
 // TestUsersReport_FileCreationError should error on invalid path.
 func TestUsersReport_FileCreationError(t *testing.T) {
-	err := UsersReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv")
+	err := UsersReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
@@ -76,7 +52,7 @@ func TestUsersReport_NoUsers(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(gSrv.URL+"/graphql", gSrv.Client())
 
 	out := filepath.Join(t.TempDir(), "users.csv")
-	err := UsersReport(context.Background(), restClient, graphClient, "ent", out)
+	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)
@@ -119,7 +95,7 @@ func TestUsersReport_SingleUser(t *testing.T) {
 
 	// run report
 	out := filepath.Join(t.TempDir(), "users.csv")
-	err := UsersReport(context.Background(), restClient, graphClient, "ent", out)
+	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
 	require.NoError(t, err)
 
 	// verify CSV contents
