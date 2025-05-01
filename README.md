@@ -118,7 +118,7 @@ The optimal number depends on your enterprise size, network conditions, and GitH
 
 **Command:**
 ```bash
-gh enterprise-reports organizations --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports --organizations --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -134,7 +134,7 @@ org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleNam
 
 **Command:**
 ```bash
-gh enterprise-reports repositories --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports --repositories --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -150,7 +150,7 @@ org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:
 
 **Command:**
 ```bash
-gh enterprise-reports teams --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports --teams --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -166,7 +166,7 @@ Team ID,Owner,Team Name,Team Slug,External Group,Members
 
 **Command:**
 ```bash
-gh enterprise-reports collaborators --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports --collaborators --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -182,7 +182,7 @@ org1/repo1,{login:user1,id:1,permission:admin}
 
 **Command:**
 ```bash
-gh enterprise-reports users --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports --users --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
