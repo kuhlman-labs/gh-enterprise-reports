@@ -41,11 +41,8 @@ Before using this tool, ensure you have the following:
   - `repo` for repository details.
   - `audit_log` for user login events.
   - `user` for user details.
-- **GitHub App (optional)**: If using GitHub App authentication, ensure you have:
-  - App ID
-  - Private key file
-  - Installation ID
-
+  - `read:enterprise` for enterprise details.
+  
 ---
 
 ## 🚀 Install manually
@@ -78,7 +75,7 @@ Before using this tool, ensure you have the following:
 
 Run the CLI with the desired flags to generate reports. For example:
 ```bash
-gh enterprise-reports --auth-method token --token <your-token> --enterprise <enterprise-slug> --organizations
+gh enterprise-reports --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
 
 ### 🔧 Flags
@@ -98,6 +95,8 @@ gh enterprise-reports --auth-method token --token <your-token> --enterprise <ent
  | `--users`                  | Generate the users report.                                                 |
  | `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
  | `--workers`                | Number of concurrent workers for fetching data (default 5).                |
+
+**note:** the `--auth-method` flag is required is not required if you are using a token. GitHub App support is experimental and may not work as expected.
 
 ### Worker Count Explanation
 
@@ -119,7 +118,7 @@ The optimal number depends on your enterprise size, network conditions, and GitH
 
 **Command:**
 ```bash
-gh enterprise-reports organizations --auth-method token --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports organizations --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -135,7 +134,7 @@ org1,123456,read,"[{""login"":""user1"",""id"":1,""name"":""User One"",""roleNam
 
 **Command:**
 ```bash
-gh enterprise-reports repositories --auth-method token --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports repositories --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -151,7 +150,7 @@ org1,repo1,false,public,2023-01-01T00:00:00Z,2022-01-01T00:00:00Z,[topic1],{key:
 
 **Command:**
 ```bash
-gh enterprise-reports teams --auth-method token --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports teams --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -167,7 +166,7 @@ Team ID,Owner,Team Name,Team Slug,External Group,Members
 
 **Command:**
 ```bash
-gh enterprise-reports collaborators --auth-method token --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports collaborators --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
@@ -183,7 +182,7 @@ org1/repo1,{login:user1,id:1,permission:admin}
 
 **Command:**
 ```bash
-gh enterprise-reports users --auth-method token --token <your-token> --enterprise <enterprise-slug>
+gh enterprise-reports users --token <your-token> --enterprise <enterprise-slug>
 ```
 
 **Sample Output:**
