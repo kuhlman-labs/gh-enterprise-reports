@@ -109,6 +109,22 @@ The `--workers` flag controls the number of concurrent workers used to fetch dat
 
 The optimal number depends on your enterprise size, network conditions, and GitHub API rate limits. Start with the default (5) and adjust as needed.
 
+### Configuration File
+You can also use a configuration file to set default values for the flags. Create a file named `config.yaml` in the repository directory with the following structure:
+
+```yaml
+token: <your-token>
+enterprise: <enterprise-slug>
+organizations: true
+workers: 5
+log_level: info
+```
+
+Then run the command without flags:
+```bash
+gh enterprise-reports
+```
+
 ---
 
 ## 📊 Sample Output
