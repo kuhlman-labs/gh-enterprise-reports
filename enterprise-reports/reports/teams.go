@@ -1,3 +1,6 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// It provides utilities and specific report types for organizations, repositories, teams,
+// collaborators, and user data, with results exported as CSV files.
 package reports
 
 import (
@@ -13,14 +16,29 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TeamReport represents a team with its associated organization,
+// external groups, and members for generating team reports.
 type TeamReport struct {
-	*github.Team
-	*github.Organization
-	ExternalGroups *github.ExternalGroupList
-	Members        []*github.User
+	*github.Team                                   // Team details
+	*github.Organization                           // Parent organization
+	ExternalGroups       *github.ExternalGroupList // External identity provider groups linked to this team
+	Members              []*github.User            // Team members
 }
 
-// TeamsReport generates a CSV report of teams for the specified Enterprise.
+// TeamsReport generates a CSV report of all teams across all organizations in an enterprise.
+// For each team, it fetches the team's details, members, and any associated external groups
+// from identity providers (such as SCIM or SAML).
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - restClient: GitHub REST API client
+//   - graphqlClient: GitHub GraphQL API client
+//   - enterpriseSlug: Enterprise identifier
+//   - filename: Output CSV file path
+//   - workerCount: Number of concurrent workers for processing teams
+//
+// The report includes team ID, organization name, team name and slug,
+// external group associations, and team membership.
 func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
 	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
 	// Validate output path early to catch file creation errors before API calls

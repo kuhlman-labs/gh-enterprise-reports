@@ -1,3 +1,6 @@
+// Package enterprisereports provides functionality for generating reports about GitHub Enterprise resources.
+// It handles configuration parsing, client initialization, and report generation for organizations,
+// repositories, teams, collaborators, and users across a GitHub Enterprise instance.
 package enterprisereports
 
 import (
@@ -13,6 +16,15 @@ import (
 )
 
 // NewRESTClient creates a new REST client configured based on the chosen authentication method.
+// It supports both personal access token and GitHub App authentication methods.
+//
+// Parameters:
+//   - ctx: Context for authentication operations
+//   - conf: Configuration containing auth method and credentials
+//
+// Returns a configured GitHub REST API client or an error if authentication fails.
+// For token authentication, it uses the provided token directly.
+// For GitHub App authentication, it loads the private key from the specified file.
 func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
 	switch conf.AuthMethod {
 	case "token":
@@ -36,6 +48,15 @@ func NewRESTClient(ctx context.Context, conf *Config) (*github.Client, error) {
 }
 
 // NewGraphQLClient creates a new GraphQL client configured based on the chosen authentication method.
+// It supports both personal access token and GitHub App authentication methods.
+//
+// Parameters:
+//   - ctx: Context for authentication operations with a 30-second timeout
+//   - conf: Configuration containing auth method and credentials
+//
+// Returns a configured GitHub GraphQL API client or an error if authentication fails.
+// For token authentication, it uses oauth2 token source.
+// For GitHub App authentication, it loads the private key from the specified file.
 func NewGraphQLClient(ctx context.Context, conf *Config) (*githubv4.Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

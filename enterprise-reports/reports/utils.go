@@ -1,3 +1,6 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// It provides utilities and specific report types for organizations, repositories, teams,
+// collaborators, and user data, with results exported as CSV files.
 package reports
 
 import (
@@ -19,6 +22,7 @@ import (
 )
 
 // getHighestPermission returns the highest permission level from the provided permissions map.
+// The permission hierarchy (from highest to lowest) is: admin, maintain, push, triage, pull, none.
 func getHighestPermission(permissions map[string]bool) string {
 	switch {
 	case permissions["admin"]:
@@ -38,6 +42,7 @@ func getHighestPermission(permissions map[string]bool) string {
 
 // validateFilePath ensures the directory for the given file path exists
 // and the path itself is non‐empty, non‐absolute, and contains no parent refs.
+// It returns an error if the path is invalid or if the parent directory doesn't exist.
 func validateFilePath(path string) error {
 	cleanPath := filepath.Clean(path)
 	if cleanPath == "" {
@@ -68,6 +73,8 @@ func validateFilePath(path string) error {
 }
 
 // createCSVFileWithHeader creates the CSV file at path, writes the header, and returns the file & writer.
+// The path is first validated using validateFilePath.
+// Returns an error if the file cannot be created or if writing the header fails.
 func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Writer, error) {
 	// validate the path first
 	if err := validateFilePath(path); err != nil {
@@ -90,6 +97,8 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 }
 
 // isDormant determines if a user is dormant by verifying events, contributions, and recent login activity.
+// A user is considered dormant if they have no recent events, no recent contributions,
+// and no recent login activity within the specified time period.
 func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, user string, since time.Time, recentLogin bool) (bool, error) {
 	slog.Debug("checking dormant status", "user", user)
 
@@ -121,19 +130,34 @@ func isDormant(ctx context.Context, restClient *github.Client, graphQLClient *gi
 }
 
 // ProcessorFunc processes an input item to an output record.
+// This is a generic function type used by the RunReport function to process items concurrently.
 type ProcessorFunc[I any, O any] func(ctx context.Context, item I) (O, error)
 
 // FormatterFunc formats an output record into a CSV row.
+// This is a generic function type used by the RunReport function to format processed items into CSV rows.
 type FormatterFunc[O any] func(output O) []string
 
 // RunReport processes items concurrently using the provided processor and formatter,
 // writing results to a CSV file with the given header. It respects the provided rate limiter.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - items: Slice of input items to process
+//   - processor: Function to process each input item
+//   - formatter: Function to format processed items into CSV rows
+//   - limiter: Rate limiter to control API request frequency
+//   - workerCount: Number of concurrent workers
+//   - filename: Path to the output CSV file
+//   - header: CSV header row
+//
+// The function handles graceful cancellation through context and continues processing
+// other items when individual item processing fails.
 func RunReport[I any, O any](
 	ctx context.Context,
 	items []I,
 	processor ProcessorFunc[I, O],
 	formatter FormatterFunc[O],
-	limiter *rate.Limiter, // Add rate limiter parameter
+	limiter *rate.Limiter,
 	workerCount int,
 	filename string,
 	header []string,

@@ -1,3 +1,6 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// It provides utilities and specific report types for organizations, repositories, teams,
+// collaborators, and user data, with results exported as CSV files.
 package reports
 
 import (
@@ -12,18 +15,34 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// RepoReport contains repository information along with additional metadata
+// about teams and custom properties associated with the repository.
 type RepoReport struct {
 	*github.Repository
-	Teams            []*repoTeam
-	CustomProperties []*github.CustomPropertyValue
+	Teams            []*repoTeam                   // Teams with access to the repository
+	CustomProperties []*github.CustomPropertyValue // Custom properties set on the repository
 }
 
+// repoTeam represents a team with access to a repository,
+// including any external identity provider groups associated with the team.
 type repoTeam struct {
 	*github.Team
-	ExternalGroups *github.ExternalGroupList
+	ExternalGroups *github.ExternalGroupList // SAML/SCIM groups linked to this team
 }
 
-// runRepositoryReport generates a CSV report for repositories, including repository details, teams, and custom properties.
+// RepositoryReport generates a CSV report for all repositories across all organizations in an enterprise.
+// It fetches repository details, teams with access, external groups, and custom properties.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - restClient: GitHub REST API client
+//   - graphQLClient: GitHub GraphQL API client
+//   - enterpriseSlug: Enterprise identifier
+//   - filename: Output CSV file path
+//   - workerCount: Number of concurrent workers for processing repositories
+//
+// The report includes repository owner organization, name, archive status, visibility,
+// timestamps, topics, custom properties, and associated teams with their external groups.
 func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
 	slog.Info("starting repository report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
 	// Validate output path early to catch file creation errors before API calls

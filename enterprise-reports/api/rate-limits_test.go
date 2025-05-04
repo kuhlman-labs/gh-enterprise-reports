@@ -1,3 +1,5 @@
+// Package api provides functionality for interacting with GitHub's REST and GraphQL APIs.
+// This file contains tests for the rate limiting functionality.
 package api
 
 import (
@@ -10,7 +12,8 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// Updated fakeRateLimitService embeds a non-nil *github.RateLimitService.
+// fakeRateLimitService mocks the GitHub rate limit service for testing.
+// It allows controlling the response and error states of rate limit API calls.
 type fakeRateLimitService struct {
 	*github.RateLimitService // Embed the original RateLimitService
 	callCount                int
@@ -18,6 +21,8 @@ type fakeRateLimitService struct {
 	err                      error
 }
 
+// Get implements the rateLimiter interface for testing.
+// It tracks the number of calls and returns predefined results or errors.
 func (f *fakeRateLimitService) Get(ctx context.Context) (*github.RateLimits, *github.Response, error) {
 	f.callCount++
 	if f.err != nil {
@@ -26,7 +31,8 @@ func (f *fakeRateLimitService) Get(ctx context.Context) (*github.RateLimits, *gi
 	return f.rateLimits, nil, nil
 }
 
-// Test helper functions.
+// TestGetRemaining tests that getRemaining correctly retrieves the
+// remaining API call count from a Rate object.
 func TestGetRemaining(t *testing.T) {
 	rate := &github.Rate{Remaining: 5}
 	if got := getRemaining(rate); got != 5 {
@@ -34,6 +40,8 @@ func TestGetRemaining(t *testing.T) {
 	}
 }
 
+// TestGetLimit tests that getLimit correctly retrieves the
+// API call limit from a Rate object.
 func TestGetLimit(t *testing.T) {
 	rate := &github.Rate{Limit: 10}
 	if got := getLimit(rate); got != 10 {
@@ -41,6 +49,8 @@ func TestGetLimit(t *testing.T) {
 	}
 }
 
+// TestGetResetTime tests that getResetTime correctly formats the
+// reset time from a Rate object using RFC3339 format.
 func TestGetResetTime(t *testing.T) {
 	resetTime := time.Now().UTC()
 	rate := &github.Rate{Reset: github.Timestamp{Time: resetTime}}
@@ -51,26 +61,32 @@ func TestGetResetTime(t *testing.T) {
 	}
 }
 
-// Helpers return zero/N/A when passed nil.
+// TestGetRemainingNil tests that getRemaining returns 0
+// when provided with a nil Rate object.
 func TestGetRemainingNil(t *testing.T) {
 	if got := getRemaining(nil); got != 0 {
 		t.Errorf("getRemaining(nil) = %d; want %d", got, 0)
 	}
 }
 
+// TestGetLimitNil tests that getLimit returns 0
+// when provided with a nil Rate object.
 func TestGetLimitNil(t *testing.T) {
 	if got := getLimit(nil); got != 0 {
 		t.Errorf("getLimit(nil) = %d; want %d", got, 0)
 	}
 }
 
+// TestGetResetTimeNil tests that getResetTime returns "N/A"
+// when provided with a nil Rate object.
 func TestGetResetTimeNil(t *testing.T) {
 	if got := getResetTime(nil); got != "N/A" {
 		t.Errorf("getResetTime(nil) = %q; want %q", got, "N/A")
 	}
 }
 
-// Test checkRateLimit successful retrieval.
+// TestCheckRateLimitSuccess tests that checkRateLimit successfully
+// retrieves rate limit information when the API call succeeds.
 func TestCheckRateLimitSuccess(t *testing.T) {
 	resetTime := time.Now().Add(1 * time.Minute).UTC()
 	rl := &github.RateLimits{
@@ -94,7 +110,8 @@ func TestCheckRateLimitSuccess(t *testing.T) {
 	}
 }
 
-// Test checkRateLimit retries on error then succeeds.
+// TestCheckRateLimitRetries tests that checkRateLimit retries after an error
+// and succeeds once the error condition clears.
 func TestCheckRateLimitRetries(t *testing.T) {
 	resetTime := time.Now().Add(1 * time.Minute).UTC()
 	rl := &github.RateLimits{
@@ -131,7 +148,8 @@ func TestCheckRateLimitRetries(t *testing.T) {
 	}
 }
 
-// checkRateLimit returns context error if ctx is canceled mid‑retry.
+// TestCheckRateLimitContextCanceled tests that checkRateLimit properly
+// handles context cancellation during retries.
 func TestCheckRateLimitContextCanceled(t *testing.T) {
 	// service always errors
 	fakeSvc := &fakeRateLimitService{
@@ -146,7 +164,8 @@ func TestCheckRateLimitContextCanceled(t *testing.T) {
 	}
 }
 
-// Test that waitForLimitReset returns quickly when context is cancelled.
+// TestWaitForLimitResetCancellation tests that waitForLimitReset returns
+// quickly when its context is cancelled.
 func TestWaitForLimitResetCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	resetTime := time.Now().Add(10 * time.Second).UTC()
@@ -162,7 +181,8 @@ func TestWaitForLimitResetCancellation(t *testing.T) {
 	}
 }
 
-// waitForLimitReset returns immediately if resetTime is in the past.
+// TestWaitForLimitResetNoWait tests that waitForLimitReset returns immediately
+// when the reset time is already in the past.
 func TestWaitForLimitResetNoWait(t *testing.T) {
 	start := time.Now()
 	waitForLimitReset(context.Background(), "test", 1, 10, time.Now().Add(-1*time.Second).UTC())
@@ -171,7 +191,8 @@ func TestWaitForLimitResetNoWait(t *testing.T) {
 	}
 }
 
-// Dummy test for MonitorRateLimits; run for a single tick.
+// TestMonitorRateLimits tests that the MonitorRateLimits function
+// runs correctly for a single tick without panic.
 func TestMonitorRateLimits(t *testing.T) {
 	resetTime := time.Now().Add(1 * time.Minute).UTC()
 	rl := &github.RateLimits{
@@ -194,7 +215,8 @@ func TestMonitorRateLimits(t *testing.T) {
 	// test passes if no panic
 }
 
-// handleRESTRateLimit does nothing when remaining above threshold.
+// TestHandleRESTRateLimitNoWait tests that handleRESTRateLimit returns
+// immediately when the remaining calls are above the threshold.
 func TestHandleRESTRateLimitNoWait(t *testing.T) {
 	start := time.Now()
 	r := github.Rate{Remaining: RESTRateLimitThreshold + 1, Limit: 100, Reset: github.Timestamp{Time: time.Now().Add(1 * time.Second)}}

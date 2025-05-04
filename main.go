@@ -1,3 +1,6 @@
+// Package main is the entry point for the GitHub Enterprise Reports application.
+// It initializes logging, sets up configuration, handles signals, and executes reports
+// based on the provided command-line flags.
 package main
 
 import (

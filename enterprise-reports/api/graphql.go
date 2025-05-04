@@ -1,3 +1,5 @@
+// Package api provides functionality for interacting with GitHub's REST and GraphQL APIs.
+// It includes rate limiting, client wrapper methods, and utilities for efficient API consumption.
 package api
 
 import (
@@ -10,7 +12,9 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// fetchOrganizationMembershipsWithRole fetches all organization memberships in the given organization using pagination.
+// FetchOrganizationMembershipsWithRole fetches all organization memberships with roles
+// in the given organization using the GraphQL API with pagination.
+// It returns a list of users with their login, name, database ID, and role in the organization.
 func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *githubv4.Client, orgLogin string) ([]*github.User, error) {
 	slog.Debug("fetching organization memberships", "organization", orgLogin)
 	// Define the GraphQL query to fetch organization memberships.
@@ -85,7 +89,9 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 	return allMemberships, nil
 }
 
-// fetch EnterpriseUsers retrieves all enterprise cloud users via the GraphQL API with pagination support.
+// FetchEnterpriseUsers retrieves all enterprise cloud users via the GraphQL API.
+// It uses pagination to fetch all users associated with the specified enterprise slug
+// and includes their login, name, database ID, and creation date.
 func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, enterpriseSlug string) ([]*github.User, error) {
 	slog.Info("fetching enterprise users", "enterprise", enterpriseSlug)
 	// Define the GraphQL query to fetch enterprise users.
@@ -171,7 +177,9 @@ func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, e
 	return allUsers, nil
 }
 
-// hasRecentContributions checks if a user has any contributions since the provided time.
+// HasRecentContributions checks if a user has any contributions since the provided time.
+// It uses the GraphQL API to fetch contribution statistics for the specified user,
+// including commits, issues, pull requests, and reviews.
 func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client, user string, since time.Time) (bool, error) {
 	slog.Debug("checking recent contributions",
 		"user", user,
@@ -235,7 +243,9 @@ func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 	return active, nil
 }
 
-// fetchUserEmail queries the enterprise GraphQL API to retrieve the email address for the specified user.
+// FetchUserEmail queries the enterprise GraphQL API to retrieve the email address for the specified user.
+// It attempts to find the user's email from SAML or SCIM identity providers
+// and returns "N/A" if no email is found.
 func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug string, user string) (string, error) {
 	slog.Debug("fetching email for user", "user", user)
 
@@ -304,7 +314,9 @@ func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug st
 	return "N/A", nil
 }
 
-// FetchEnterpriseOrgs retrieves all organizations for the specified enterprise.
+// FetchEnterpriseOrgs retrieves all organizations for the specified enterprise using the GraphQL API.
+// It handles pagination and rate limiting to return a complete list of organizations
+// with their login names and node IDs.
 func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, enterpriseSlug string) ([]*github.Organization, error) {
 	slog.Info("fetching organizations for enterprise", "enterprise", enterpriseSlug)
 	var query struct {

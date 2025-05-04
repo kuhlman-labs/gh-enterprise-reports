@@ -1,3 +1,5 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// This file contains tests for the users report functionality.
 package reports
 
 import (
@@ -18,13 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestUsersReport_FileCreationError should error on invalid path.
+// TestUsersReport_FileCreationError tests that the UsersReport function
+// returns an error when given an invalid output file path.
 func TestUsersReport_FileCreationError(t *testing.T) {
 	err := UsersReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
-// TestUsersReport_NoUsers should produce only header when no users.
+// TestUsersReport_NoUsers tests that the UsersReport function generates
+// a valid CSV file with only the header row when no users are found.
 func TestUsersReport_NoUsers(t *testing.T) {
 	muxG := http.NewServeMux()
 	muxG.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +70,8 @@ func TestUsersReport_NoUsers(t *testing.T) {
 	)
 }
 
+// TestUsersReport_SingleUser tests that the UsersReport function
+// correctly processes a user and writes the expected data to CSV.
 func TestUsersReport_SingleUser(t *testing.T) {
 	muxG := http.NewServeMux()
 	muxG.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {

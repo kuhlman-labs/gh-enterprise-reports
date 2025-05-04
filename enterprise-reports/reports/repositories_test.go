@@ -1,3 +1,5 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// This file contains tests for the repositories report functionality.
 package reports
 
 import (
@@ -19,13 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRepositoryReport_FileCreationError should fail if the output path is invalid.
+// TestRepositoryReport_FileCreationError tests that the RepositoryReport function
+// returns an error when given an invalid output file path.
 func TestRepositoryReport_FileCreationError(t *testing.T) {
 	err := RepositoryReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
-// TestRepositoryReport_GraphQLFetchError should bubble up a fetch‐orgs error.
+// TestRepositoryReport_GraphQLFetchError tests that the RepositoryReport function
+// properly propagates errors when the GraphQL API call to fetch organizations fails.
 func TestRepositoryReport_GraphQLFetchError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -37,7 +41,8 @@ func TestRepositoryReport_GraphQLFetchError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestRepositoryReport_NoRepos should produce only the CSV header when no orgs/repos exist.
+// TestRepositoryReport_NoRepos tests that the RepositoryReport function generates
+// a valid CSV file with only the header row when no repositories are found.
 func TestRepositoryReport_NoRepos(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL returns no orgs
@@ -68,7 +73,9 @@ func TestRepositoryReport_NoRepos(t *testing.T) {
 	)
 }
 
-// TestRepositoryReport_SingleRepo exercises one org → one repo → one team → one ext group → one custom prop.
+// TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp tests that the RepositoryReport function
+// correctly processes a repository with its teams, external groups, and custom properties,
+// generating a properly formatted CSV file with the expected data.
 func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL: one org
@@ -149,9 +156,14 @@ func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	_ = err
 }
 
-// headerRT injects rate‐limit headers into every REST response.
-type headerRT struct{ base http.RoundTripper }
+// headerRT is a custom http.RoundTripper that injects rate limit headers
+// into every API response for testing rate limit handling.
+type headerRT struct {
+	base http.RoundTripper // The underlying transport to delegate actual requests to
+}
 
+// RoundTrip implements the http.RoundTripper interface by delegating to the base
+// transport and adding GitHub rate limit headers to the response.
 func (h headerRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := h.base.RoundTrip(req)
 	if err != nil {

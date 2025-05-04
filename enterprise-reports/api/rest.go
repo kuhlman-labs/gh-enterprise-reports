@@ -1,3 +1,5 @@
+// Package api provides functionality for interacting with GitHub's REST and GraphQL APIs.
+// It includes rate limiting, client wrapper methods, and utilities for efficient API consumption.
 package api
 
 import (
@@ -9,7 +11,8 @@ import (
 	"github.com/google/go-github/v70/github"
 )
 
-// hasRecentEvents determines whether a user has any recent events after the specified time.
+// HasRecentEvents determines whether a user has any recent events after the specified time.
+// It checks the user's public event stream and returns true if any events are found after the given time.
 func HasRecentEvents(ctx context.Context, restClient *github.Client, user string, since time.Time) (bool, error) {
 	slog.Debug("checking recent events", "user", user, "since", since)
 
@@ -33,7 +36,9 @@ func HasRecentEvents(ctx context.Context, restClient *github.Client, user string
 	return false, nil
 }
 
-// fetchUserLogins retrieves audit log events for user login actions over the past 90 days and returns a mapping of login to the most recent login time.
+// FetchUserLogins retrieves audit log events for user login actions over the past 90 days
+// and returns a mapping of login names to their most recent login times.
+// This helps identify recently active vs dormant users.
 func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string, referenceTime time.Time) (map[string]time.Time, error) {
 	slog.Info("fetching user login audit logs", "enterprise", enterpriseSlug)
 
@@ -94,7 +99,8 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 	return loginMap, nil
 }
 
-// FetchTeamsForOrganizations retrieves all teams for the specified organizations.
+// FetchTeamsForOrganizations retrieves all teams for the specified organization.
+// The results are paginated and combined, with rate limit handling.
 func FetchTeamsForOrganizations(ctx context.Context, restClient *github.Client, org string) ([]*github.Team, error) {
 	slog.Debug("fetching teams", "organization", org)
 
@@ -127,6 +133,7 @@ func FetchTeamsForOrganizations(ctx context.Context, restClient *github.Client, 
 }
 
 // FetchTeamMembers retrieves all members for the specified team and organization.
+// The function handles pagination and rate limiting automatically.
 func FetchTeamMembers(ctx context.Context, restClient *github.Client, team *github.Team, org string) ([]*github.User, error) {
 	slog.Debug("getting members", "team", team.GetSlug())
 
@@ -163,6 +170,7 @@ func FetchTeamMembers(ctx context.Context, restClient *github.Client, team *gith
 }
 
 // FetchOrganizationRepositories retrieves all repositories for the specified organization.
+// Results include all repository types (public, private, etc.) with pagination handling.
 func FetchOrganizationRepositories(ctx context.Context, restClient *github.Client, org string) ([]*github.Repository, error) {
 	slog.Debug("fetching organization repositories", "organization", org)
 
@@ -196,7 +204,8 @@ func FetchOrganizationRepositories(ctx context.Context, restClient *github.Clien
 	return allRepos, nil
 }
 
-// FetchTeams retrieves all teams for the specified repository.
+// FetchTeams retrieves all teams that have access to the specified repository.
+// Results are paginated with proper rate limit handling.
 func FetchTeams(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.Team, error) {
 	slog.Debug("getting teams", "repository", repo)
 
@@ -229,7 +238,8 @@ func FetchTeams(ctx context.Context, restClient *github.Client, owner, repo stri
 	return allTeams, nil
 }
 
-// FetchExternalGroups retrieves external groups for the specified team.
+// FetchExternalGroups retrieves external groups (such as SAML identity provider groups)
+// for the specified team.
 func FetchExternalGroups(ctx context.Context, restClient *github.Client, owner, teamSlug string) (*github.ExternalGroupList, error) {
 	slog.Debug("getting external groups", "teamSlug", teamSlug)
 
@@ -247,6 +257,7 @@ func FetchExternalGroups(ctx context.Context, restClient *github.Client, owner, 
 }
 
 // FetchCustomProperties retrieves all custom properties for the specified repository.
+// Custom properties are organization-defined metadata fields attached to repositories.
 func FetchCustomProperties(ctx context.Context, restClient *github.Client, owner, repo string) ([]*github.CustomPropertyValue, error) {
 	slog.Debug("fetching custom properties", "repository", repo)
 
@@ -263,7 +274,9 @@ func FetchCustomProperties(ctx context.Context, restClient *github.Client, owner
 	return customProperties, nil
 }
 
-// FetchOrganizationMemberships retrieves all organization members with roles for the specified organization using the REST API.
+// FetchOrganizationMemberships retrieves all organization members with their roles
+// for the specified organization using the REST API.
+// For each member, additional details are fetched including their role and display name.
 func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client, orgLogin string) ([]*github.User, error) {
 	slog.Debug("fetching organization memberships", "organization", orgLogin)
 
@@ -318,7 +331,8 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 	return membershipList, nil
 }
 
-// FetchOrganizationMember retrieves the membership details of a user in the given organization via the REST API.
+// FetchOrganizationMember retrieves the membership details of a user in the given organization
+// via the REST API, including their role (admin, member, etc.).
 func FetchOrganizationMember(ctx context.Context, restClient *github.Client, orgLogin, userLogin string) (*github.Membership, error) {
 	slog.Debug("fetching organization membership", "organization", orgLogin, "user", userLogin)
 
@@ -335,7 +349,9 @@ func FetchOrganizationMember(ctx context.Context, restClient *github.Client, org
 	return membership, nil
 }
 
-// FetchUserById fetches a user by their ID using the REST API.
+// FetchUserById fetches a user by their numeric ID using the REST API.
+// This is useful when you need additional user details beyond what's available
+// in other API responses.
 func FetchUserById(ctx context.Context, restClient *github.Client, id int64) (*github.User, error) {
 	slog.Debug("fetching user by id", "userID", id)
 
@@ -353,6 +369,7 @@ func FetchUserById(ctx context.Context, restClient *github.Client, id int64) (*g
 }
 
 // FetchOrganization fetches the details for the specified organization.
+// This returns organization settings, default permissions, and other metadata.
 func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin string) (*github.Organization, error) {
 	slog.Debug("fetching organization details", "organization", orgLogin)
 
@@ -370,6 +387,7 @@ func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin 
 }
 
 // FetchRepoCollaborators retrieves all collaborators for the specified repository.
+// This includes both direct collaborators and those with access through team memberships.
 func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo *github.Repository) ([]*github.User, error) {
 	slog.Info("fetching repository collaborators", "repository", repo.GetFullName())
 

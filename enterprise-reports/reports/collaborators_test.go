@@ -1,3 +1,5 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// This file contains tests for the collaborators report functionality.
 package reports
 
 import (
@@ -19,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCollaboratorsReport_FileCreationError tests that the CollaboratorsReport function
+// returns an error when given an invalid output file path.
 func TestCollaboratorsReport_FileCreationError(t *testing.T) {
 	ctx := context.Background()
 	// invalid directory to force createCSVFileWithHeader error
@@ -27,6 +31,8 @@ func TestCollaboratorsReport_FileCreationError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestCollaboratorsReport_GraphQLFetchError tests that the CollaboratorsReport function
+// properly propagates errors when the GraphQL API call to fetch organizations fails.
 func TestCollaboratorsReport_GraphQLFetchError(t *testing.T) {
 	// server always returns 500 on /graphql
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +51,8 @@ func TestCollaboratorsReport_GraphQLFetchError(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to fetch enterprise orgs")
 }
 
+// TestCollaboratorsReport_NoOrgs tests that the CollaboratorsReport function generates
+// a valid CSV file with only the header row when no organizations are found.
 func TestCollaboratorsReport_NoOrgs(t *testing.T) {
 	// GraphQL returns empty organizations
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +80,9 @@ func TestCollaboratorsReport_NoOrgs(t *testing.T) {
 	assert.Equal(t, "Repository,Collaborators", lines[0])
 }
 
+// TestCollaboratorsReport_SingleRepoSingleCollaborator tests that the CollaboratorsReport function
+// correctly processes a repository with a single collaborator, generating a properly formatted
+// CSV file with the expected repository and collaborator data.
 func TestCollaboratorsReport_SingleRepoSingleCollaborator(t *testing.T) {
 	mux := http.NewServeMux()
 

@@ -1,3 +1,5 @@
+// Package api provides functionality for interacting with GitHub's REST and GraphQL APIs.
+// It includes rate limiting, client wrapper methods, and utilities for efficient API consumption.
 package api
 
 import (
@@ -24,7 +26,8 @@ type rateLimiter interface {
 	Get(ctx context.Context) (*github.RateLimits, *github.Response, error)
 }
 
-// checkRateLimit now takes any rateLimiter, retries on error
+// checkRateLimit checks the GitHub API rate limits using the provided service.
+// It attempts to handle transient errors by retrying up to maxRetries times.
 func checkRateLimit(ctx context.Context, svc rateLimiter) (*github.RateLimits, error) {
 	const maxRetries = 3
 	var rl *github.RateLimits
@@ -101,7 +104,8 @@ func EnsureRateLimits(ctx context.Context, restClient *github.Client) {
 	}
 }
 
-// MonitorRateLimits now also takes rateLimiter instead of *github.Client
+// MonitorRateLimits periodically checks and logs GitHub API rate limits.
+// It takes a rateLimiter for REST API rate limits, a GraphQL client, and a checking interval.
 func MonitorRateLimits(ctx context.Context, restSvc rateLimiter, graphQLClient *githubv4.Client, interval time.Duration) {
 	slog.Info("starting rate limit monitoring", "interval", interval)
 
@@ -166,6 +170,9 @@ func MonitorRateLimits(ctx context.Context, restSvc rateLimiter, graphQLClient *
 }
 
 // Helper functions to safely access rate limit fields.
+
+// getRemaining safely returns the Remaining value from a Rate.
+// Returns 0 if the Rate is nil.
 func getRemaining(rl *github.Rate) int {
 	if rl == nil {
 		return 0
@@ -173,6 +180,8 @@ func getRemaining(rl *github.Rate) int {
 	return rl.Remaining
 }
 
+// getLimit safely returns the Limit value from a Rate.
+// Returns 0 if the Rate is nil.
 func getLimit(rl *github.Rate) int {
 	if rl == nil {
 		return 0
@@ -180,6 +189,8 @@ func getLimit(rl *github.Rate) int {
 	return rl.Limit
 }
 
+// getResetTime safely returns the Reset time from a Rate as a formatted string.
+// Returns "N/A" if the Rate is nil.
 func getResetTime(rl *github.Rate) string {
 	if rl == nil {
 		return "N/A"

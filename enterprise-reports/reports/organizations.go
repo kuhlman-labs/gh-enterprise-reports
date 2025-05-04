@@ -1,3 +1,6 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// It provides utilities and specific report types for organizations, repositories, teams,
+// collaborators, and user data, with results exported as CSV files.
 package reports
 
 import (
@@ -12,20 +15,36 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// OrgReport represents an organization with its members list,
+// used to generate organization reports with membership details.
 type OrgReport struct {
-	Organization *github.Organization
-	Members      []*github.User
+	Organization *github.Organization // Organization details
+	Members      []*github.User       // List of organization members
 }
 
-// OrgMemberInfo represents a simplified organization member for CSV output
+// OrgMemberInfo represents a simplified organization member for CSV output.
+// Contains only the essential member information needed for reporting.
 type OrgMemberInfo struct {
-	Login    string `json:"login"`
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	RoleName string `json:"roleName"`
+	Login    string `json:"login"`    // User's GitHub login name
+	ID       int64  `json:"id"`       // User's numeric ID
+	Name     string `json:"name"`     // User's display name
+	RoleName string `json:"roleName"` // User's role in the organization (admin, member, etc.)
 }
 
 // OrganizationsReport generates a CSV report for all enterprise organizations.
+// It fetches all organizations within the enterprise, along with their members and settings,
+// and outputs the data to a CSV file.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - graphQLClient: GitHub GraphQL API client
+//   - restClient: GitHub REST API client
+//   - enterpriseSlug: Enterprise identifier
+//   - filename: Output CSV file path
+//   - workerCount: Number of concurrent workers for processing organizations
+//
+// The report includes organization name, ID, default repository permission settings,
+// a JSON-encoded list of members with their details, and the total member count.
 func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, enterpriseSlug, filename string, workerCount int) error {
 	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
 	// Validate output path early to catch file creation errors before API calls

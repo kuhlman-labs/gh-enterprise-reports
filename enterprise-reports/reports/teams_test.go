@@ -1,3 +1,5 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// This file contains tests for the teams report functionality.
 package reports
 
 import (
@@ -18,13 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTeamsReport_FileCreationError should fail if output path invalid.
+// TestTeamsReport_FileCreationError tests that the TeamsReport function
+// returns an error when given an invalid output file path.
 func TestTeamsReport_FileCreationError(t *testing.T) {
 	err := TeamsReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
 	require.Error(t, err)
 }
 
-// TestTeamsReport_GraphQLFetchError ensures GraphQL fetch error bubbles up.
+// TestTeamsReport_GraphQLFetchError tests that the TeamsReport function
+// properly propagates errors when the GraphQL API call fails.
 func TestTeamsReport_GraphQLFetchError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -36,7 +40,8 @@ func TestTeamsReport_GraphQLFetchError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestTeamsReport_NoTeams should produce only CSV header when no orgs exist.
+// TestTeamsReport_NoTeams tests that the TeamsReport function generates
+// a valid CSV file with only the header row when no teams are found.
 func TestTeamsReport_NoTeams(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL returns no orgs
@@ -65,6 +70,9 @@ func TestTeamsReport_NoTeams(t *testing.T) {
 	)
 }
 
+// TestTeamsReport_SingleTeam tests that the TeamsReport function correctly
+// processes a single team with members and external groups, generating
+// a properly formatted CSV file with the expected data.
 func TestTeamsReport_SingleTeam(t *testing.T) {
 	mux := http.NewServeMux()
 	// GraphQL: one org
