@@ -1,3 +1,5 @@
+// Package reports implements various report generation functionalities for GitHub Enterprise.
+// This file contains tests for the organizations report functionality.
 package reports
 
 import (
@@ -19,7 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestOrganizationsReport_FileCreationError tests that passing an invalid file path returns an error.
+// TestOrganizationsReport_FileCreationError tests that the OrganizationsReport function
+// returns an error when given an invalid output file path.
 func TestOrganizationsReport_FileCreationError(t *testing.T) {
 	ctx := context.Background()
 	invalidPath := "/this/path/does/not/exist/report.csv"
@@ -27,7 +30,8 @@ func TestOrganizationsReport_FileCreationError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestOrganizationsReport_GraphQLFetchError tests that a GraphQL fetch error is returned.
+// TestOrganizationsReport_GraphQLFetchError tests that the OrganizationsReport function
+// properly propagates errors when the GraphQL API call to fetch organizations fails.
 func TestOrganizationsReport_GraphQLFetchError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -45,7 +49,8 @@ func TestOrganizationsReport_GraphQLFetchError(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to fetch organizations")
 }
 
-// TestOrganizationsReport_NoOrgs tests that when no organizations are returned, only the header is written.
+// TestOrganizationsReport_NoOrgs tests that the OrganizationsReport function generates
+// a valid CSV file with only the header row when no organizations are found.
 func TestOrganizationsReport_NoOrgs(t *testing.T) {
 	mux := http.NewServeMux()
 
@@ -78,7 +83,9 @@ func TestOrganizationsReport_NoOrgs(t *testing.T) {
 	assert.Equal(t, "Organization,Organization ID,Organization Default Repository Permission,Members,Total Members", lines[0])
 }
 
-// TestOrganizationsReport_SingleOrgSingleMember tests a single organization with one member.
+// TestOrganizationsReport_SingleOrgSingleMember tests that the OrganizationsReport function
+// correctly processes a single organization with one member, generating a properly formatted
+// CSV file with the expected organization and member details.
 func TestOrganizationsReport_SingleOrgSingleMember(t *testing.T) {
 	mux := http.NewServeMux()
 
