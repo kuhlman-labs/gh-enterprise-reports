@@ -26,7 +26,7 @@ type CollaboratorInfo struct {
 
 // CollaboratorsReport generates a CSV report of repository collaborators for the enterprise.
 func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
-	slog.Info("starting collaborators report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
+	slog.Info("starting collaborators report", "enterprise", enterpriseSlug, "filename", filename, "workers", workerCount)
 	// Validate output path early to catch file creation errors before API calls
 	if err := validateFilePath(filename); err != nil {
 		return err
@@ -42,10 +42,10 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	// Collect all repositories across orgs
 	var repos []*github.Repository
 	for _, org := range orgs {
-		slog.Info("fetching repositories for org", slog.String("org", org.GetLogin()))
+		slog.Info("fetching repositories for org", "org", org.GetLogin())
 		rs, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
 		if err != nil {
-			slog.Error("failed to fetch repositories for org", slog.String("org", org.GetLogin()), slog.Any("err", err))
+			slog.Error("failed to fetch repositories for org", "org", org.GetLogin(), "error", err)
 			continue
 		}
 		repos = append(repos, rs...)
@@ -56,7 +56,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 		cols, err := api.FetchRepoCollaborators(ctx, restClient, repo)
 		if err != nil {
 			// Log the error but return a report with empty collaborators instead of skipping.
-			slog.Warn("failed to fetch collaborators, reporting repo with empty collaborators", slog.String("repo", repo.GetFullName()), slog.Any("err", err))
+			slog.Warn("failed to fetch collaborators, reporting repo with empty collaborators", slog.String("repo", repo.GetFullName()), "error", err)
 			return &CollaboratorReport{Repository: repo, Collaborators: []CollaboratorInfo{}}, nil // Return non-nil report, nil error
 		}
 		var infos []CollaboratorInfo
@@ -75,7 +75,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 			for _, ci := range r.Collaborators {
 				data, err := json.Marshal(ci)
 				if err != nil {
-					slog.Error("failed to marshal collaborator info", slog.String("repo", r.Repository.GetFullName()), slog.Any("ci", ci), slog.Any("err", err))
+					slog.Error("failed to marshal collaborator info", slog.String("repo", r.Repository.GetFullName()), slog.Any("ci", ci), "error", err)
 					continue // Skip this collaborator on error
 				}
 				row = append(row, string(data))

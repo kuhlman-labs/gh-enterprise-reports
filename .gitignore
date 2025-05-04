@@ -38,3 +38,4 @@ gh-enterprise-reports
 
 # config files
 config.yml
+*.pem

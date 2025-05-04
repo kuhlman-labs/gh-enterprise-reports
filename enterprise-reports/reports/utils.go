@@ -81,8 +81,8 @@ func createCSVFileWithHeader(path string, header []string) (*os.File, *csv.Write
 	}
 	w := csv.NewWriter(f)
 	if err := w.Write(header); err != nil {
-		if cerr := f.Close(); cerr != nil {
-			slog.Error("failed to close file after header write error", slog.Any("err", cerr))
+		if err := f.Close(); err != nil {
+			slog.Error("failed to close file after header write error", "error", err)
 		}
 		return nil, nil, fmt.Errorf("failed to write header to file %s: %w", path, err)
 	}
@@ -145,7 +145,7 @@ func RunReport[I any, O any](
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
-			slog.Error("failed to close CSV file", slog.Any("err", cerr))
+			slog.Error("failed to close CSV file", "error", cerr)
 		}
 	}()
 
@@ -171,7 +171,7 @@ func RunReport[I any, O any](
 					// Wait for the rate limiter
 					err := limiter.Wait(ctx)
 					if err != nil {
-						slog.Warn("rate limiter wait failed", slog.Any("err", err))
+						slog.Warn("rate limiter wait failed", "error", err)
 						// Decide if you want to return or continue based on the error
 						// If context is canceled, this will return an error.
 						if ctx.Err() != nil {
@@ -183,7 +183,7 @@ func RunReport[I any, O any](
 
 					result, err := processor(ctx, item)
 					if err != nil {
-						slog.Warn("processing item failed", slog.Any("item", item), slog.Any("err", err))
+						slog.Warn("processing item failed", "error", err, "item", item)
 						continue // Skip this item on processor error
 					}
 					atomic.AddInt64(&count, 1)
@@ -223,7 +223,7 @@ func RunReport[I any, O any](
 		if err := writer.Write(row); err != nil {
 			// It might be better to log the error and continue,
 			// rather than failing the entire report for one write error.
-			slog.Error("failed to write row to CSV", slog.Any("err", err))
+			slog.Error("failed to write row to CSV", "error", err)
 			continue // Continue processing other results
 		}
 	}
@@ -231,7 +231,7 @@ func RunReport[I any, O any](
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		// Log the flush error, but the report might still be partially useful.
-		slog.Error("failed to flush CSV writer", slog.Any("err", err))
+		slog.Error("failed to flush CSV writer", "error", err)
 	}
 	slog.Info("report complete", slog.String("filename", filename))
 	return writer.Error() // Return the flush error if any occurred

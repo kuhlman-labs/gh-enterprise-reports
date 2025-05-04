@@ -9,24 +9,27 @@ import (
 	"github.com/google/go-github/v70/github"
 )
 
-// hasRecentEvents determines whether a user has any recent public events after the specified time.
+// hasRecentEvents determines whether a user has any recent events after the specified time.
 func HasRecentEvents(ctx context.Context, restClient *github.Client, user string, since time.Time) (bool, error) {
 	slog.Debug("checking recent events", "user", user, "since", since)
 
-	events, resp, err := restClient.Activity.ListEventsPerformedByUser(ctx, user, false, nil)
-	if err != nil {
-		return false, fmt.Errorf("list events for user %q failed: %w", user, err)
+	opts := &github.ListOptions{
+		PerPage: 100,
+		Page:    1,
 	}
 
-	// Check rate limits after fetching events.
-	handleRESTRateLimit(ctx, resp.Rate)
+	events, _, err := restClient.Activity.ListEventsPerformedByUser(ctx, user, false, opts)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch events for %q: %w", user, err)
+	}
 
 	for _, event := range events {
-		if event.CreatedAt != nil && event.CreatedAt.After(since) {
-			slog.Debug("detected recent activity", "user", user, "event_type", *event.Type, "event_time", event.CreatedAt.Time)
+		if event.GetCreatedAt().After(since) {
+			slog.Debug("detected recent activity", "user", user, "event_type", event.GetType(), "event_time", event.GetCreatedAt())
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
 

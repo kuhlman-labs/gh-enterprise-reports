@@ -25,7 +25,7 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	if err := validateFilePath(filename); err != nil {
 		return err
 	}
-	slog.Info("starting users report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
+	slog.Info("starting users report", "enterprise", enterpriseSlug, "filename", filename, "workers", workerCount)
 	header := []string{
 		"ID",
 		"Login",
@@ -52,11 +52,12 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	// Processor: fetch email, last login, and dormancy
 	processor := func(ctx context.Context, u *github.User) (*UserReport, error) {
 		// Email
-		slog.Info("processing user", "user", u.GetLogin())
+		slog.Info("processing user", "login", u.GetLogin())
 		email, err := api.FetchUserEmail(ctx, graphQLClient, enterpriseSlug, u.GetLogin())
 		if err != nil {
-			slog.Debug("fetching user email failed", "user", u.GetLogin(), "err", err)
-			email = "N/A"
+			slog.Debug("failed to fetch email", "user", u.GetLogin(), "error", err)
+			// Continue without email
+			email = ""
 		}
 		// Last login
 		lastLogin := userLogins[u.GetLogin()]
@@ -64,7 +65,7 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		// Dormant
 		dormant, err := isDormant(ctx, restClient, graphQLClient, u.GetLogin(), referenceTime, recent)
 		if err != nil {
-			slog.Debug("dormancy check failed", "user", u.GetLogin(), "err", err)
+			slog.Debug("dormancy check failed", "user", u.GetLogin(), "error", err)
 			dormant = false // Default to false if error occurs
 		}
 		u.Email = &email // Set email directly on the User struct

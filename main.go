@@ -22,7 +22,7 @@ func main() {
 	}
 	defer func() {
 		if err := logFile.Close(); err != nil {
-			slog.Error("failed to close log file", "err", err)
+			slog.Error("failed to close log file", "error", err)
 		}
 	}()
 
