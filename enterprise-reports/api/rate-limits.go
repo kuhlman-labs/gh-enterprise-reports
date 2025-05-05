@@ -204,5 +204,5 @@ func getResetTime(rl *github.Rate) string {
 	if rl == nil {
 		return "N/A"
 	}
-	return rl.Reset.Time.Format(time.RFC3339)
+	return rl.Reset.Format(time.RFC3339)
 }
