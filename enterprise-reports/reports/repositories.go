@@ -61,6 +61,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		"Teams",
 	}
 	// Fetch all organizations
+	slog.Info("fetching enterprise organizations", slog.String("enterprise", enterpriseSlug))
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
@@ -68,6 +69,7 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 	// Collect all repositories
 	var reposList []*github.Repository
 	for _, org := range orgs {
+		slog.Info("fetching repositories for org", "org", org.GetLogin())
 		repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
 		if err != nil {
 			slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "err", err)

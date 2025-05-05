@@ -12,7 +12,7 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// RateLimit is a struct that defines the graphQL rate limit.
+// rateLimitQuery is a struct to hold the rate limit information.
 type rateLimitQuery struct {
 	Cost      int
 	Limit     int
@@ -90,7 +90,7 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 // It uses pagination to fetch all users associated with the specified enterprise slug
 // and includes their login, name, database ID, and creation date.
 func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, enterpriseSlug string) ([]*github.User, error) {
-	slog.Info("fetching enterprise users", "enterprise", enterpriseSlug)
+	slog.Debug("fetching enterprise users", "enterprise", enterpriseSlug)
 	// Define the GraphQL query to fetch enterprise users.
 	// The query fetches the first 100 Cloud members and uses pagination to retrieve all users.
 	// It also checks for rate limits after each request.
@@ -158,7 +158,7 @@ func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, e
 		variables["cursor"] = &query.Enterprise.Members.PageInfo.EndCursor
 	}
 
-	slog.Info("fetched all enterprise cloud users", "users", len(allUsers))
+	slog.Debug("fetched all enterprise cloud users", "users", len(allUsers))
 	return allUsers, nil
 }
 
@@ -265,13 +265,18 @@ func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug st
 		if string(node.User.Login) == user {
 			// Prefer SamlIdentity emails over ScimIdentity.
 			if len(node.SamlIdentity.Emails) > 0 {
+				slog.Debug("found email for user", "user", user, "email", node.SamlIdentity.Emails[0].Value)
 				return string(node.SamlIdentity.Emails[0].Value), nil
 			}
 			if len(node.ScimIdentity.Emails) > 0 {
+				slog.Debug("found email for user", "user", user, "email", node.ScimIdentity.Emails[0].Value)
 				return string(node.ScimIdentity.Emails[0].Value), nil
 			}
 		}
 	}
+
+	slog.Debug("no email found for user", "user", user)
+
 	return "N/A", nil
 }
 
@@ -279,7 +284,7 @@ func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug st
 // It handles pagination and rate limiting to return a complete list of organizations
 // with their login names and node IDs.
 func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, enterpriseSlug string) ([]*github.Organization, error) {
-	slog.Info("fetching organizations for enterprise", "enterprise", enterpriseSlug)
+	slog.Debug("fetching organizations for enterprise", "enterprise", enterpriseSlug)
 	var query struct {
 		Enterprise struct {
 			Organizations struct {
@@ -328,6 +333,6 @@ func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, en
 		}
 		variables["cursor"] = query.Enterprise.Organizations.PageInfo.EndCursor
 	}
-	slog.Info("fetched all organizations", "total", len(orgs))
+	slog.Debug("fetched all organizations", "total", len(orgs))
 	return orgs, nil
 }

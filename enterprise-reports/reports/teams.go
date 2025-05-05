@@ -54,6 +54,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		"Members",
 	}
 	// Fetch organizations
+	slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
@@ -64,7 +65,7 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		slog.Info("fetching teams for org", "org", org.GetLogin())
 		teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
 		if err != nil {
-			slog.Debug("failed to fetch teams for org", "org", org.GetLogin(), "err", err)
+			slog.Warn("failed to fetch teams for org", "org", org.GetLogin(), "err", err)
 			continue
 		}
 		for _, t := range teams {

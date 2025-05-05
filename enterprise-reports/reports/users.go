@@ -56,12 +56,16 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	// Inactivity threshold and fetch user logins
 	const inactivityThreshold = 90 * 24 * time.Hour
 	referenceTime := time.Now().UTC().Add(-inactivityThreshold)
+
+	// Fetch user logins
+	slog.Info("fetching user logins", "enterprise", enterpriseSlug)
 	userLogins, err := api.FetchUserLogins(ctx, restClient, enterpriseSlug, referenceTime)
 	if err != nil {
 		return fmt.Errorf("fetching user logins for enterprise %q: %w", enterpriseSlug, err)
 	}
 
 	// Fetch enterprise users
+	slog.Info("fetching enterprise users", "enterprise", enterpriseSlug)
 	users, err := api.FetchEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("fetching enterprise users for %q: %w", enterpriseSlug, err)
