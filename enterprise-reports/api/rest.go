@@ -68,7 +68,7 @@ func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseS
 		allAuditLogs = append(allAuditLogs, auditLogs...)
 
 		// Check rate limits after fetching a page of audit logs.
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		if resp.After == "" {
 			break
@@ -119,7 +119,7 @@ func FetchTeamsForOrganizations(ctx context.Context, restClient *github.Client, 
 		allTeams = append(allTeams, teams...)
 
 		// Check rate limit
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -156,7 +156,7 @@ func FetchTeamMembers(ctx context.Context, restClient *github.Client, team *gith
 		allMembers = append(allMembers, members...)
 
 		// Check rate limit
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -192,7 +192,7 @@ func FetchOrganizationRepositories(ctx context.Context, restClient *github.Clien
 		allRepos = append(allRepos, repos...)
 
 		// Check rate limit
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -224,7 +224,7 @@ func FetchTeams(ctx context.Context, restClient *github.Client, owner, repo stri
 		allTeams = append(allTeams, teams...)
 
 		// Check rate limit
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -249,7 +249,7 @@ func FetchExternalGroups(ctx context.Context, restClient *github.Client, owner, 
 	}
 
 	// Check rate limit
-	handleRESTRateLimit(ctx, resp.Rate)
+	handleRESTRateLimit(ctx, &resp.Rate)
 
 	slog.Debug("fetched external groups", "count", len(externalGroups.Groups))
 
@@ -267,7 +267,7 @@ func FetchCustomProperties(ctx context.Context, restClient *github.Client, owner
 	}
 
 	// Check rate limit
-	handleRESTRateLimit(ctx, resp.Rate)
+	handleRESTRateLimit(ctx, &resp.Rate)
 
 	slog.Debug("fetched custom properties", "count", len(customProperties))
 
@@ -298,7 +298,7 @@ func FetchOrganizationMemberships(ctx context.Context, restClient *github.Client
 		allMemberships = append(allMemberships, memberships...)
 
 		// Check rate limit
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages
 		if resp.NextPage == 0 {
@@ -342,7 +342,7 @@ func FetchOrganizationMember(ctx context.Context, restClient *github.Client, org
 	}
 
 	// Check rate limit
-	handleRESTRateLimit(ctx, resp.Rate)
+	handleRESTRateLimit(ctx, &resp.Rate)
 
 	slog.Debug("fetched organization membership", "organization", orgLogin, "user", userLogin)
 
@@ -361,7 +361,7 @@ func FetchUserById(ctx context.Context, restClient *github.Client, id int64) (*g
 	}
 
 	// Check rate limit
-	handleRESTRateLimit(ctx, resp.Rate)
+	handleRESTRateLimit(ctx, &resp.Rate)
 
 	slog.Debug("fetched user", "userID", id)
 
@@ -379,7 +379,7 @@ func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin 
 	}
 
 	// Check rate limit
-	handleRESTRateLimit(ctx, resp.Rate)
+	handleRESTRateLimit(ctx, &resp.Rate)
 
 	slog.Debug("fetched organization details", "organizationLogin", org.GetLogin())
 
@@ -407,7 +407,7 @@ func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo
 		allCollaborators = append(allCollaborators, collaborators...)
 
 		// Check REST API rate limit.
-		handleRESTRateLimit(ctx, resp.Rate)
+		handleRESTRateLimit(ctx, &resp.Rate)
 
 		// Check if there are more pages.
 		if resp.NextPage == 0 {

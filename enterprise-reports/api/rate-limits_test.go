@@ -220,7 +220,7 @@ func TestMonitorRateLimits(t *testing.T) {
 func TestHandleRESTRateLimitNoWait(t *testing.T) {
 	start := time.Now()
 	r := github.Rate{Remaining: RESTRateLimitThreshold + 1, Limit: 100, Reset: github.Timestamp{Time: time.Now().Add(1 * time.Second)}}
-	handleRESTRateLimit(context.Background(), r)
+	handleRESTRateLimit(context.Background(), &r)
 	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
 		t.Errorf("handleRESTRateLimit above threshold should return immediately; took %v", elapsed)
 	}

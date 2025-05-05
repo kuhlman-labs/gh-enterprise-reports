@@ -12,6 +12,14 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+// RateLimit is a struct that defines the graphQL rate limit.
+type rateLimitQuery struct {
+	Cost      int
+	Limit     int
+	Remaining int
+	ResetAt   githubv4.DateTime
+}
+
 // FetchOrganizationMembershipsWithRole fetches all organization memberships with roles
 // in the given organization using the GraphQL API with pagination.
 // It returns a list of users with their login, name, database ID, and role in the organization.
@@ -37,12 +45,7 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 				}
 			} `graphql:"membersWithRole(first: 100, after: $cursor)"`
 		} `graphql:"organization(login: $login)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
+		RateLimit rateLimitQuery
 	}
 	variables := map[string]interface{}{
 		"login":  githubv4.String(orgLogin),
@@ -64,14 +67,8 @@ func FetchOrganizationMembershipsWithRole(ctx context.Context, graphQLClient *gi
 			}
 		}
 		// Check rate limit
-		if query.RateLimit.Remaining < 10 {
-			slog.Warn("rate limit low, waiting until reset",
-				"service", "GraphQL",
-				"remaining", query.RateLimit.Remaining,
-				"limit", query.RateLimit.Limit,
-			)
-			waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-		}
+		handleGraphQLRateLimit(ctx, &query.RateLimit)
+
 		// Check if there are more pages
 		if !query.Organization.MembersWithRole.PageInfo.HasNextPage {
 			break
@@ -116,12 +113,7 @@ func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, e
 				}
 			} `graphql:"members(first: 100, deployment: CLOUD, after: $cursor)"`
 		} `graphql:"enterprise(slug: $enterpriseSlug)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
+		RateLimit rateLimitQuery
 	}
 
 	var allUsers []*github.User
@@ -155,14 +147,7 @@ func FetchEnterpriseUsers(ctx context.Context, graphQLClient *githubv4.Client, e
 		}
 
 		// Check for rate limits.
-		if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
-			slog.Warn("rate limit low",
-				"service", "GraphQL",
-				"remaining", query.RateLimit.Remaining,
-				"limit", query.RateLimit.Limit,
-			)
-			waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-		}
+		handleGraphQLRateLimit(ctx, &query.RateLimit)
 
 		// If there is no next page, break out.
 		if !query.Enterprise.Members.PageInfo.HasNextPage {
@@ -197,12 +182,7 @@ func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 				HasAnyRestrictedContributions       bool
 			} `graphql:"contributionsCollection(from: $since)"`
 		} `graphql:"user(login: $login)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
+		RateLimit rateLimitQuery
 	}
 
 	vars := map[string]interface{}{
@@ -215,14 +195,7 @@ func HasRecentContributions(ctx context.Context, graphQLClient *githubv4.Client,
 	}
 
 	// Check for rate limits.
-	if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
-		slog.Warn("rate limit low",
-			"service", "GraphQL",
-			"remaining", query.RateLimit.Remaining,
-			"limit", query.RateLimit.Limit,
-		)
-		waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-	}
+	handleGraphQLRateLimit(ctx, &query.RateLimit)
 
 	contrib := query.User.ContributionsCollection
 	total := contrib.TotalCommitContributions +
@@ -275,12 +248,7 @@ func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug st
 				}
 			}
 		} `graphql:"enterprise(slug: $slug)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
+		RateLimit rateLimitQuery
 	}
 	variables := map[string]interface{}{
 		"slug":  githubv4.String(slug),
@@ -291,14 +259,7 @@ func FetchUserEmail(ctx context.Context, graphQLClient *githubv4.Client, slug st
 	}
 
 	// Check for rate limits.
-	if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
-		slog.Warn("rate limit low",
-			"service", "GraphQL",
-			"remaining", query.RateLimit.Remaining,
-			"limit", query.RateLimit.Limit,
-		)
-		waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-	}
+	handleGraphQLRateLimit(ctx, &query.RateLimit)
 
 	for _, node := range query.Enterprise.OwnerInfo.SamlIdentityProvider.ExternalIdentities.Nodes {
 		if string(node.User.Login) == user {
@@ -332,12 +293,7 @@ func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, en
 				} `graphql:"pageInfo"`
 			} `graphql:"organizations(first: 100, after: $cursor)"`
 		} `graphql:"enterprise(slug: $enterpriseSlug)"`
-		RateLimit struct {
-			Cost      int
-			Limit     int
-			Remaining int
-			ResetAt   githubv4.DateTime
-		}
+		RateLimit rateLimitQuery
 	}
 	variables := map[string]interface{}{
 		"enterpriseSlug": githubv4.String(enterpriseSlug),
@@ -364,14 +320,7 @@ func FetchEnterpriseOrgs(ctx context.Context, graphQLClient *githubv4.Client, en
 		}
 
 		// Check rate limit
-		if query.RateLimit.Remaining < GraphQLRateLimitThreshold {
-			slog.Warn("rate limit low, waiting until reset",
-				"service", "GraphQL",
-				"remaining", query.RateLimit.Remaining,
-				"limit", query.RateLimit.Limit,
-			)
-			waitForLimitReset(ctx, "GraphQL", query.RateLimit.Remaining, query.RateLimit.Limit, query.RateLimit.ResetAt.Time)
-		}
+		handleGraphQLRateLimit(ctx, &query.RateLimit)
 
 		// Check if there are more pages
 		if !query.Enterprise.Organizations.PageInfo.HasNextPage {

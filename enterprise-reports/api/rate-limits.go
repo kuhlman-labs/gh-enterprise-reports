@@ -23,17 +23,18 @@ const GraphQLRateLimitThreshold = 100
 
 // rateLimiter is an interface for the rate limit service.
 type rateLimiter interface {
+	// Get retrieves the rate limits for the GitHub API.
 	Get(ctx context.Context) (*github.RateLimits, *github.Response, error)
 }
 
 // checkRateLimit checks the GitHub API rate limits using the provided service.
 // It attempts to handle transient errors by retrying up to maxRetries times.
-func checkRateLimit(ctx context.Context, svc rateLimiter) (*github.RateLimits, error) {
+func checkRateLimit(ctx context.Context, rlService rateLimiter) (*github.RateLimits, error) {
 	const maxRetries = 3
 	var rl *github.RateLimits
 	var err error
 	for i := 0; i < maxRetries; i++ {
-		rl, _, err = svc.Get(ctx)
+		rl, _, err = rlService.Get(ctx)
 		if err == nil {
 			return rl, nil
 		}
@@ -41,7 +42,7 @@ func checkRateLimit(ctx context.Context, svc rateLimiter) (*github.RateLimits, e
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context canceled during rate limit check: %w", ctx.Err())
 		default:
-			slog.Warn("retrying rate limit check", "error", err, "attempt", i+1)
+			slog.Warn("retrying rate limit check", "error", err, "attempt", i)
 			time.Sleep(2 * time.Second)
 		}
 	}
@@ -59,7 +60,7 @@ func waitForLimitReset(ctx context.Context, name string, remaining, limit int, r
 			"remaining", remaining,
 			"limit", limit,
 			"wait_duration", waitDuration.Truncate(time.Second).String(),
-			"reset_time", resetTime.UTC().Format(time.RFC3339),
+			"reset_time", resetTime.Format(time.RFC3339),
 		)
 
 		timer := time.NewTimer(waitDuration)
@@ -77,10 +78,18 @@ func waitForLimitReset(ctx context.Context, name string, remaining, limit int, r
 }
 
 // handleRESTRateLimit logs a warning and waits if the REST rate limit is below the threshold.
-func handleRESTRateLimit(ctx context.Context, rate github.Rate) {
+func handleRESTRateLimit(ctx context.Context, rate *github.Rate) {
 	if rate.Remaining < RESTRateLimitThreshold {
 		slog.Warn("rest rate limit low", "remaining", rate.Remaining, "limit", rate.Limit)
 		waitForLimitReset(ctx, "rest", rate.Remaining, rate.Limit, rate.Reset.Time)
+	}
+}
+
+// handleGraphQLRateLimit logs a warning and waits if the GraphQL rate limit is below the threshold.
+func handleGraphQLRateLimit(ctx context.Context, rate *rateLimitQuery) {
+	if rate.Remaining < GraphQLRateLimitThreshold {
+		slog.Warn("graphql rate limit low", "remaining", rate.Remaining, "limit", rate.Limit)
+		waitForLimitReset(ctx, "graphql", rate.Remaining, rate.Limit, rate.ResetAt.Time)
 	}
 }
 
@@ -195,5 +204,5 @@ func getResetTime(rl *github.Rate) string {
 	if rl == nil {
 		return "N/A"
 	}
-	return rl.Reset.Time.UTC().Format(time.RFC3339)
+	return rl.Reset.Time.Format(time.RFC3339)
 }
