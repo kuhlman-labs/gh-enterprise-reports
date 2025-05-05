@@ -54,6 +54,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	header := []string{"Repository", "Collaborators"}
 
 	// Fetch all enterprise orgs
+	slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch enterprise orgs: %w", err)
@@ -65,7 +66,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 		slog.Info("fetching repositories for org", "org", org.GetLogin())
 		rs, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
 		if err != nil {
-			slog.Error("failed to fetch repositories for org", "org", org.GetLogin(), "error", err)
+			slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "error", err)
 			continue
 		}
 		repos = append(repos, rs...)
@@ -73,6 +74,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 
 	// Processor: fetch collaborators for a repository
 	processor := func(ctx context.Context, repo *github.Repository) (*CollaboratorReport, error) {
+		slog.Info("processing collaborators", "repo", repo.GetFullName())
 		cols, err := api.FetchRepoCollaborators(ctx, restClient, repo)
 		if err != nil {
 			// Log the error but return a report with empty collaborators instead of skipping.

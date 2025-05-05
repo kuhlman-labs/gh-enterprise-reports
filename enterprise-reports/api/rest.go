@@ -40,7 +40,7 @@ func HasRecentEvents(ctx context.Context, restClient *github.Client, user string
 // and returns a mapping of login names to their most recent login times.
 // This helps identify recently active vs dormant users.
 func FetchUserLogins(ctx context.Context, restClient *github.Client, enterpriseSlug string, referenceTime time.Time) (map[string]time.Time, error) {
-	slog.Info("fetching user login audit logs", "enterprise", enterpriseSlug)
+	slog.Debug("fetching user login audit logs", "enterprise", enterpriseSlug)
 
 	// Only pull login events on or after the reference time
 	phrase := fmt.Sprintf("action:user.login created:>=%s", referenceTime.Format(time.RFC3339))
@@ -389,7 +389,7 @@ func FetchOrganization(ctx context.Context, restClient *github.Client, orgLogin 
 // FetchRepoCollaborators retrieves all collaborators for the specified repository.
 // This includes both direct collaborators and those with access through team memberships.
 func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo *github.Repository) ([]*github.User, error) {
-	slog.Info("fetching repository collaborators", "repository", repo.GetFullName())
+	slog.Debug("fetching repository collaborators", "repository", repo.GetFullName())
 
 	opts := &github.ListCollaboratorsOptions{
 		ListOptions: github.ListOptions{

@@ -60,6 +60,7 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	}
 
 	// Fetch initial list of orgs
+	slog.Info("fetching enterprise organizations", slog.String("enterprise", enterpriseSlug))
 	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
