@@ -175,8 +175,14 @@ func TestNewMultiHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			t.Errorf("Failed to close temp file: %v", err)
+		}
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Errorf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	// Redirect stderr to capture console output
 	oldStderr := os.Stderr
@@ -194,13 +200,17 @@ func TestNewMultiHandler(t *testing.T) {
 	logger.Info("test message", "key", "value")
 
 	// Close the writer to flush all data
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Errorf("Failed to close pipe writer: %v", err)
+	}
 
 	// Read stderr output
 	stderrOutput, _ := io.ReadAll(r)
 
 	// Read file output
-	tmpFile.Seek(0, 0)
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		t.Errorf("Failed to seek in temp file: %v", err)
+	}
 	fileOutput, _ := io.ReadAll(tmpFile)
 
 	// Verify file output (JSON format)
@@ -234,8 +244,14 @@ func TestSetupLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			t.Errorf("Failed to close temp file: %v", err)
+		}
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Errorf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	// Save the default logger to restore it after the test
 	origLogger := slog.Default()
@@ -256,13 +272,17 @@ func TestSetupLogging(t *testing.T) {
 	slog.Info("setup test", "setup_key", "setup_value")
 
 	// Close the writer to flush all data
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Errorf("Failed to close pipe writer: %v", err)
+	}
 
 	// Read stderr output
 	stderrOutput, _ := io.ReadAll(r)
 
 	// Read file output
-	tmpFile.Seek(0, 0)
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		t.Errorf("Failed to seek in temp file: %v", err)
+	}
 	fileOutput, _ := io.ReadAll(tmpFile)
 
 	// Verify file output (JSON format)

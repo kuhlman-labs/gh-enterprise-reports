@@ -96,7 +96,14 @@ gh enterprise-reports --token <your-token> --enterprise <enterprise-slug> --orga
  | `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
  | `--workers`                | Number of concurrent workers for fetching data (default 5).                |
 
-**note:** the `--auth-method` flag is required is not required if you are using a token. GitHub App support is experimental and may not work as expected.
+**notes:** 
+The `--auth-method` flag is required is only required if you are using a GitHub App. GitHub App support is experimental at this time and may not work as expected.
+
+You can que multiple reports in a single command. For example:
+```bash
+gh enterprise-reports --token <your-token> --enterprise <enterprise-slug> --organizations --repositories
+```
+This will generate both the organizations and repositories reports.
 
 ### Worker Count Explanation
 
@@ -116,6 +123,7 @@ You can also use a configuration file to set default values for the flags. Creat
 token: <your-token>
 enterprise: <enterprise-slug>
 organizations: true
+repositories: true
 workers: 5
 log_level: info
 ```

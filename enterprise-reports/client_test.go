@@ -64,7 +64,10 @@ func TestNewRESTClient_Token(t *testing.T) {
 			t.Errorf("Expected Authorization header 'Bearer test-token', got %q", token)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, err := w.Write([]byte(`{}`))
+		if err != nil {
+			t.Fatalf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
