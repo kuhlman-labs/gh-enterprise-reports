@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,8 @@ import (
 // TestRepositoryReport_FileCreationError tests that the RepositoryReport function
 // returns an error when given an invalid output file path.
 func TestRepositoryReport_FileCreationError(t *testing.T) {
-	err := RepositoryReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := RepositoryReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1, cache)
 	require.Error(t, err)
 }
 
@@ -37,7 +39,8 @@ func TestRepositoryReport_GraphQLFetchError(t *testing.T) {
 	defer srv.Close()
 
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
-	err := RepositoryReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := RepositoryReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1, cache)
 	require.Error(t, err)
 }
 
@@ -60,7 +63,8 @@ func TestRepositoryReport_NoRepos(t *testing.T) {
 	restClient.BaseURL = baseURL
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	bs, err := os.ReadFile(out)
@@ -120,7 +124,8 @@ func TestRepositoryReport_SingleRepoSingleTeamSingleCustomProp(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := RepositoryReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)

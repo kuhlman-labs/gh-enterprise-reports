@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/reports"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 )
 
 // Config encapsulates all configuration from CLI flags and Viper.
@@ -197,6 +198,9 @@ func generateReportFilename(enterprise, reportName string) string {
 
 // RunReports executes the selected report logic.
 func RunReports(ctx context.Context, conf *Config, restClient *github.Client, graphQLClient *githubv4.Client) {
+	// Create a shared cache for all reports
+	cache := utils.NewSharedCache()
+
 	runReport := func(reportName string, reportFunc func()) {
 		start := time.Now()
 		slog.Info("running report", slog.String("report", reportName))
@@ -217,7 +221,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Organizations {
 		runReport("organizations", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "organizations")
-			if err := reports.OrganizationsReport(ctx, graphQLClient, restClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
+			if err := reports.OrganizationsReport(ctx, graphQLClient, restClient, conf.EnterpriseSlug, fileName, conf.Workers, cache); err != nil {
 				slog.Error("failed to run organizations report", "error", err)
 			}
 		})
@@ -225,7 +229,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Repositories {
 		runReport("repositories", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "repositories")
-			if err := reports.RepositoryReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
+			if err := reports.RepositoryReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers, cache); err != nil {
 				slog.Error("failed to run repositories report", "error", err)
 			}
 		})
@@ -233,7 +237,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Teams {
 		runReport("teams", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "teams")
-			if err := reports.TeamsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
+			if err := reports.TeamsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers, cache); err != nil {
 				slog.Error("failed to run teams report", "error", err)
 			}
 		})
@@ -241,7 +245,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Collaborators {
 		runReport("collaborators", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "collaborators")
-			if err := reports.CollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
+			if err := reports.CollaboratorsReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers, cache); err != nil {
 				slog.Error("failed to run collaborators report", "error", err)
 			}
 		})
@@ -249,7 +253,7 @@ func RunReports(ctx context.Context, conf *Config, restClient *github.Client, gr
 	if conf.Users {
 		runReport("users", func() {
 			fileName := generateReportFilename(conf.EnterpriseSlug, "users")
-			if err := reports.UsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers); err != nil {
+			if err := reports.UsersReport(ctx, restClient, graphQLClient, conf.EnterpriseSlug, fileName, conf.Workers, cache); err != nil {
 				slog.Error("failed to run users report", "error", err)
 			}
 		})

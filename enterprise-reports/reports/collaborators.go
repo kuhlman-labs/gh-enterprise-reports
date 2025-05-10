@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/time/rate"
 )
@@ -45,7 +46,7 @@ type CollaboratorInfo struct {
 //
 // The report includes repository full name and JSON-encoded collaborator details
 // with login, ID, and permission level for each collaborator.
-func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
+func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting collaborators report", "enterprise", enterpriseSlug, "filename", filename, "workers", workerCount)
 	// Validate output path early to catch file creation errors before API calls
 	if err := validateFilePath(filename); err != nil {
@@ -53,21 +54,41 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	}
 	header := []string{"Repository", "Collaborators"}
 
-	// Fetch all enterprise orgs
-	slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
-	orgs, err := api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)
-	if err != nil {
-		return fmt.Errorf("failed to fetch enterprise orgs: %w", err)
+	// Check cache for organizations or fetch from API
+	var orgs []*github.Organization
+	var err error
+
+	if cachedOrgs, found := cache.GetEnterpriseOrgs(); found {
+		slog.Info("using cached enterprise organizations")
+		orgs = cachedOrgs
+	} else {
+		// Fetch all enterprise orgs
+		slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
+		orgs, err = api.FetchEnterpriseOrgs(ctx, graphClient, enterpriseSlug)
+		if err != nil {
+			return fmt.Errorf("failed to fetch enterprise orgs: %w", err)
+		}
+		// Store in cache
+		cache.SetEnterpriseOrgs(orgs)
 	}
 
 	// Collect all repositories across orgs
 	var repos []*github.Repository
 	for _, org := range orgs {
-		slog.Info("fetching repositories for org", "org", org.GetLogin())
-		rs, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
-		if err != nil {
-			slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "error", err)
-			continue
+		// Check cache for organization repositories
+		var rs []*github.Repository
+		if cachedRepos, found := cache.GetOrgRepositories(org.GetLogin()); found {
+			slog.Info("using cached repositories for org", "org", org.GetLogin())
+			rs = cachedRepos
+		} else {
+			slog.Info("fetching repositories for org", "org", org.GetLogin())
+			rs, err = api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "error", err)
+				continue
+			}
+			// Store in cache
+			cache.SetOrgRepositories(org.GetLogin(), rs)
 		}
 		repos = append(repos, rs...)
 	}
@@ -75,12 +96,25 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	// Processor: fetch collaborators for a repository
 	processor := func(ctx context.Context, repo *github.Repository) (*CollaboratorReport, error) {
 		slog.Info("processing collaborators", "repo", repo.GetFullName())
-		cols, err := api.FetchRepoCollaborators(ctx, restClient, repo)
-		if err != nil {
-			// Log the error but return a report with empty collaborators instead of skipping.
-			slog.Warn("failed to fetch collaborators, reporting repo with empty collaborators", slog.String("repo", repo.GetFullName()), "error", err)
-			return &CollaboratorReport{Repository: repo, Collaborators: []CollaboratorInfo{}}, nil // Return non-nil report, nil error
+
+		// Check cache for repository collaborators
+		var cols []*github.User
+		var err error
+
+		if cachedCollaborators, found := cache.GetRepoCollaborators(repo.GetFullName()); found {
+			slog.Info("using cached collaborators for repo", "repo", repo.GetFullName())
+			cols = cachedCollaborators
+		} else {
+			cols, err = api.FetchRepoCollaborators(ctx, restClient, repo)
+			if err != nil {
+				// Log the error but return a report with empty collaborators instead of skipping.
+				slog.Warn("failed to fetch collaborators, reporting repo with empty collaborators", slog.String("repo", repo.GetFullName()), "error", err)
+				return &CollaboratorReport{Repository: repo, Collaborators: []CollaboratorInfo{}}, nil // Return non-nil report, nil error
+			}
+			// Store in cache
+			cache.SetRepoCollaborators(repo.GetFullName(), cols)
 		}
+
 		var infos []CollaboratorInfo
 		for _, c := range cols {
 			infos = append(infos, CollaboratorInfo{c.GetLogin(), c.GetID(), getHighestPermission(c.GetPermissions())})

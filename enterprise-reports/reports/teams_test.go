@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,8 @@ import (
 // TestTeamsReport_FileCreationError tests that the TeamsReport function
 // returns an error when given an invalid output file path.
 func TestTeamsReport_FileCreationError(t *testing.T) {
-	err := TeamsReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := TeamsReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1, cache)
 	require.Error(t, err)
 }
 
@@ -36,7 +38,8 @@ func TestTeamsReport_GraphQLFetchError(t *testing.T) {
 	defer srv.Close()
 
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
-	err := TeamsReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := TeamsReport(context.Background(), nil, graphClient, "ent", filepath.Join(t.TempDir(), "out.csv"), 1, cache)
 	require.Error(t, err)
 }
 
@@ -57,7 +60,8 @@ func TestTeamsReport_NoTeams(t *testing.T) {
 	restClient.BaseURL = baseURL
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)
@@ -102,7 +106,8 @@ func TestTeamsReport_SingleTeam(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(srv.URL+"/graphql", srv.Client())
 
 	out := filepath.Join(t.TempDir(), "out.csv")
-	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := TeamsReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)

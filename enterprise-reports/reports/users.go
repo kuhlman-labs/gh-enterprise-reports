@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/time/rate"
 )
@@ -38,7 +39,7 @@ type UserReport struct {
 //
 // The report includes user ID, login name, display name, email address, last login time,
 // and dormancy status.
-func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
+func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	// Validate output path early to catch file creation errors before API calls
 	if err := validateFilePath(filename); err != nil {
 		return err
@@ -64,11 +65,21 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		return fmt.Errorf("fetching user logins for enterprise %q: %w", enterpriseSlug, err)
 	}
 
-	// Fetch enterprise users
-	slog.Info("fetching enterprise users", "enterprise", enterpriseSlug)
-	users, err := api.FetchEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
-	if err != nil {
-		return fmt.Errorf("fetching enterprise users for %q: %w", enterpriseSlug, err)
+	// Check cache for enterprise users or fetch from API
+	var users []*github.User
+
+	if cachedUsers, found := cache.GetEnterpriseUsers(); found {
+		slog.Info("using cached enterprise users")
+		users = cachedUsers
+	} else {
+		// Fetch enterprise users
+		slog.Info("fetching enterprise users", "enterprise", enterpriseSlug)
+		users, err = api.FetchEnterpriseUsers(ctx, graphQLClient, enterpriseSlug)
+		if err != nil {
+			return fmt.Errorf("fetching enterprise users for %q: %w", enterpriseSlug, err)
+		}
+		// Store in cache
+		cache.SetEnterpriseUsers(users)
 	}
 
 	// Processor: fetch email, last login, and dormancy

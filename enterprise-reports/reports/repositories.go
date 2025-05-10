@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/time/rate"
 )
@@ -40,10 +41,11 @@ type repoTeam struct {
 //   - enterpriseSlug: Enterprise identifier
 //   - filename: Output CSV file path
 //   - workerCount: Number of concurrent workers for processing repositories
+//   - cache: Shared cache for storing and retrieving GitHub data
 //
 // The report includes repository owner organization, name, archive status, visibility,
 // timestamps, topics, custom properties, and associated teams with their external groups.
-func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
+func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting repository report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
 	// Validate output path early to catch file creation errors before API calls
 	if err := validateFilePath(filename); err != nil {
@@ -60,31 +62,64 @@ func RepositoryReport(ctx context.Context, restClient *github.Client, graphQLCli
 		"Custom_Properties",
 		"Teams",
 	}
-	// Fetch all organizations
-	slog.Info("fetching enterprise organizations", slog.String("enterprise", enterpriseSlug))
-	orgs, err := api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
-	if err != nil {
-		return fmt.Errorf("failed to fetch organizations: %w", err)
+	// Check cache for organizations or fetch from API
+	var orgs []*github.Organization
+	var err error
+
+	if cachedOrgs, found := cache.GetEnterpriseOrgs(); found {
+		slog.Info("using cached enterprise organizations")
+		orgs = cachedOrgs
+	} else {
+		// Fetch all organizations
+		slog.Info("fetching enterprise organizations", slog.String("enterprise", enterpriseSlug))
+		orgs, err = api.FetchEnterpriseOrgs(ctx, graphQLClient, enterpriseSlug)
+		if err != nil {
+			return fmt.Errorf("failed to fetch organizations: %w", err)
+		}
+		// Store in cache
+		cache.SetEnterpriseOrgs(orgs)
 	}
+
 	// Collect all repositories
 	var reposList []*github.Repository
 	for _, org := range orgs {
-		slog.Info("fetching repositories for org", "org", org.GetLogin())
-		repos, err := api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
-		if err != nil {
-			slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "err", err)
-			continue
+		// Check cache for organization repositories
+		var repos []*github.Repository
+		if cachedRepos, found := cache.GetOrgRepositories(org.GetLogin()); found {
+			slog.Info("using cached repositories for org", "org", org.GetLogin())
+			repos = cachedRepos
+		} else {
+			slog.Info("fetching repositories for org", "org", org.GetLogin())
+			repos, err = api.FetchOrganizationRepositories(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Warn("failed to fetch repositories for org", "org", org.GetLogin(), "err", err)
+				continue
+			}
+			// Store in cache
+			cache.SetOrgRepositories(org.GetLogin(), repos)
 		}
 		reposList = append(reposList, repos...)
 	}
 	// Processor: enrich repository with teams and custom properties
 	processor := func(ctx context.Context, repo *github.Repository) (*RepoReport, error) {
 		slog.Info("processing repository", "repo", repo.GetFullName())
-		// Fetch teams and external groups
-		teams, err := api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
-		if err != nil {
-			slog.Debug("failed to fetch teams", "repo", repo.GetFullName(), "err", err)
+
+		// Check cache for repository teams
+		var teams []*github.Team
+		if cachedTeams, found := cache.GetRepoTeams(repo.GetFullName()); found {
+			slog.Info("using cached teams for repo", "repo", repo.GetFullName())
+			teams = cachedTeams
+		} else {
+			// Fetch teams and external groups
+			teams, err = api.FetchTeams(ctx, restClient, repo.GetOwner().GetLogin(), repo.GetName())
+			if err != nil {
+				slog.Debug("failed to fetch teams", "repo", repo.GetFullName(), "err", err)
+				teams = []*github.Team{} // Initialize to empty slice on error
+			}
+			// Store in cache
+			cache.SetRepoTeams(repo.GetFullName(), teams)
 		}
+
 		var repoTeams []*repoTeam
 		for _, t := range teams {
 			eg, err := api.FetchExternalGroups(ctx, restClient, repo.GetOwner().GetLogin(), t.GetSlug())

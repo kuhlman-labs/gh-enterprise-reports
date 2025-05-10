@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,8 @@ import (
 // TestUsersReport_FileCreationError tests that the UsersReport function
 // returns an error when given an invalid output file path.
 func TestUsersReport_FileCreationError(t *testing.T) {
-	err := UsersReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := UsersReport(context.Background(), nil, nil, "ent", "/no/such/dir/out.csv", 1, cache)
 	require.Error(t, err)
 }
 
@@ -56,7 +58,8 @@ func TestUsersReport_NoUsers(t *testing.T) {
 	graphClient := githubv4.NewEnterpriseClient(gSrv.URL+"/graphql", gSrv.Client())
 
 	out := filepath.Join(t.TempDir(), "users.csv")
-	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(out)
@@ -101,7 +104,8 @@ func TestUsersReport_SingleUser(t *testing.T) {
 
 	// run report
 	out := filepath.Join(t.TempDir(), "users.csv")
-	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1) // Add workerCount=1
+	cache := utils.NewSharedCache()
+	err := UsersReport(context.Background(), restClient, graphClient, "ent", out, 1, cache)
 	require.NoError(t, err)
 
 	// verify CSV contents

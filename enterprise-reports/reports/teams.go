@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/time/rate"
 )
@@ -36,10 +37,11 @@ type TeamReport struct {
 //   - enterpriseSlug: Enterprise identifier
 //   - filename: Output CSV file path
 //   - workerCount: Number of concurrent workers for processing teams
+//   - cache: Shared cache for storing and retrieving GitHub data
 //
 // The report includes team ID, organization name, team name and slug,
 // external group associations, and team membership.
-func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string, workerCount int) error {
+func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
 	// Validate output path early to catch file creation errors before API calls
 	if err := validateFilePath(filename); err != nil {
@@ -53,20 +55,41 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		"External Group",
 		"Members",
 	}
-	// Fetch organizations
-	slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
-	orgs, err := api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
-	if err != nil {
-		return fmt.Errorf("failed to fetch organizations: %w", err)
+	// Check cache for organizations or fetch from API
+	var orgs []*github.Organization
+	var err error
+
+	if cachedOrgs, found := cache.GetEnterpriseOrgs(); found {
+		slog.Info("using cached enterprise organizations")
+		orgs = cachedOrgs
+	} else {
+		// Fetch organizations
+		slog.Info("fetching enterprise organizations", "enterprise", enterpriseSlug)
+		orgs, err = api.FetchEnterpriseOrgs(ctx, graphqlClient, enterpriseSlug)
+		if err != nil {
+			return fmt.Errorf("failed to fetch organizations: %w", err)
+		}
+		// Store in cache
+		cache.SetEnterpriseOrgs(orgs)
 	}
+
 	// Prepare initial items: organization teams
 	var items []*TeamReport
 	for _, org := range orgs {
-		slog.Info("fetching teams for org", "org", org.GetLogin())
-		teams, err := api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
-		if err != nil {
-			slog.Warn("failed to fetch teams for org", "org", org.GetLogin(), "err", err)
-			continue
+		// Check cache for teams
+		var teams []*github.Team
+		if cachedTeams, found := cache.GetOrgTeams(org.GetLogin()); found {
+			slog.Info("using cached teams for org", "org", org.GetLogin())
+			teams = cachedTeams
+		} else {
+			slog.Info("fetching teams for org", "org", org.GetLogin())
+			teams, err = api.FetchTeamsForOrganizations(ctx, restClient, org.GetLogin())
+			if err != nil {
+				slog.Warn("failed to fetch teams for org", "org", org.GetLogin(), "err", err)
+				continue
+			}
+			// Store in cache
+			cache.SetOrgTeams(org.GetLogin(), teams)
 		}
 		for _, t := range teams {
 			items = append(items, &TeamReport{Team: t, Organization: org})
@@ -75,13 +98,27 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 	// Processor: fetch members and external groups
 	processor := func(ctx context.Context, tr *TeamReport) (*TeamReport, error) {
 		slog.Info("processing team", "team", tr.GetSlug())
-		members, err := api.FetchTeamMembers(ctx, restClient, tr.Team, tr.GetLogin())
-		if err != nil {
-			slog.Debug("skipping membership fetch", "team", tr.GetSlug(), "err", err)
-			tr.Members = []*github.User{} // Initialize to empty slice on error
+
+		// Generate team key for cache
+		teamKey := fmt.Sprintf("%s/%s", tr.GetLogin(), tr.GetSlug())
+
+		// Check cache for team members
+		var members []*github.User
+		var err error
+		if cachedMembers, found := cache.GetTeamMembers(teamKey); found {
+			slog.Info("using cached team members", "team", tr.GetSlug())
+			members = cachedMembers
 		} else {
-			tr.Members = members // Assign fetched members if successful
+			members, err = api.FetchTeamMembers(ctx, restClient, tr.Team, tr.GetLogin())
+			if err != nil {
+				slog.Debug("skipping membership fetch", "team", tr.GetSlug(), "err", err)
+				members = []*github.User{} // Initialize to empty slice on error
+			} else {
+				// Store in cache
+				cache.SetTeamMembers(teamKey, members)
+			}
 		}
+		tr.Members = members
 
 		ext, err := api.FetchExternalGroups(ctx, restClient, tr.GetLogin(), tr.GetSlug())
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v70/github"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,8 @@ import (
 func TestOrganizationsReport_FileCreationError(t *testing.T) {
 	ctx := context.Background()
 	invalidPath := "/this/path/does/not/exist/report.csv"
-	err := OrganizationsReport(ctx, nil, nil, "ent", invalidPath, 1)
+	cache := utils.NewSharedCache()
+	err := OrganizationsReport(ctx, nil, nil, "ent", invalidPath, 1, cache)
 	require.Error(t, err)
 }
 
@@ -43,8 +45,8 @@ func TestOrganizationsReport_GraphQLFetchError(t *testing.T) {
 
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
-
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
+	cache := utils.NewSharedCache()
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1, cache)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to fetch organizations")
 }
@@ -71,8 +73,8 @@ func TestOrganizationsReport_NoOrgs(t *testing.T) {
 
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
-
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
+	cache := utils.NewSharedCache()
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1, cache)
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)
@@ -124,7 +126,7 @@ func TestOrganizationsReport_SingleOrgSingleMember(t *testing.T) {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	})
-	// alias path matching code’s fetch URL (/user/123)
+	// alias path matching code's fetch URL (/user/123)
 	mux.HandleFunc("/user/123", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := fmt.Fprintln(w, `{"login":"user1","name":"User One"}`); err != nil {
@@ -145,8 +147,8 @@ func TestOrganizationsReport_SingleOrgSingleMember(t *testing.T) {
 
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "out.csv")
-
-	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1)
+	cache := utils.NewSharedCache()
+	err := OrganizationsReport(context.Background(), graphClient, restClient, "ent", filePath, 1, cache)
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filePath)
