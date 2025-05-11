@@ -6,18 +6,41 @@
 
 A GitHub CLI extension to help administrators of a GitHub Enterprise Cloud environment run reports against their enterprise.
 
+## 🚀 Quick Start
+
+```bash
+# Install the extension
+gh extension install kuhlman-labs/gh-enterprise-reports
+
+# Generate a configuration template
+gh enterprise-reports init
+
+# Edit the config.yml file with your settings
+# Then run a report using your config
+gh enterprise-reports --profile default
+```
+
 ## Table of Contents
-- [Features](#%F0%9F%93%8B-features)
-- [Prerequisites](#%E2%9A%99%EF%B8%8F-prerequisites)
-- [Install manually](#%F0%9F%9A%80-install-manually)
-- [Install with GitHub CLI](#%F0%9F%9A%80-install-with-github-cli)
-- [Usage](#%F0%9F%9A%99%EF%B8%8F-usage)
-  - [Flags](#-flags)
-  - [Sample Output](#%F0%9F%93%8A-sample-output)
-- [Getting Help](#-%E2%9F%99%CB%86-getting-help)
-- [Contributing](#%E2%9D%A4%EF%B8%8F-contributing)
-- [Acknowledgments](#%F0%9F%93%9A-acknowledgments)
-- [License](#%F0%9F%93%9C-license)
+- [🚀 Quick Start](#-quick-start)
+- [📋 Features](#-features)
+- [⚙️ Prerequisites](#-prerequisites)
+- [🚀 Install manually](#-install-manually)
+- [🚀 Install with GitHub CLI](#-install-with-github-cli)
+- [🛠️ Usage](#-usage)
+  - [🛠️ Initialization](#-initialization)
+  - [🔧 Flags](#-flags)
+- [🔄 Output Formats](#-output-formats)
+- [📋 Configuration Profiles](#-configuration-profiles)
+- [🛠️ Configuration Examples](#-configuration-examples)
+- [📊 Sample Output](#-sample-output)
+- [📝 Logging](#-logging)
+- [🛠️ Troubleshooting](#-troubleshooting)
+- [🤔 Getting Help](#-getting-help)
+- [🤝 Contributing](#-contributing)
+- [📚 Acknowledgments](#-acknowledgments)
+- [🔄 Workflow Examples](#-workflow-examples)
+- [❓ Frequently Asked Questions](#-frequently-asked-questions)
+- [📜 License](#-license)
 
 ---
 
@@ -78,23 +101,75 @@ Run the CLI with the desired flags to generate reports. For example:
 gh enterprise-reports --token <your-token> --enterprise <enterprise-slug> --organizations
 ```
 
+### 🛠️ Initialization
+
+To get started with a configuration file, you can use the `init` command to generate a template:
+
+```bash
+gh enterprise-reports init
+```
+
+This will create a `config.yml` file in your current directory with documented options and example profiles. You can then customize this file with your own settings.
+
+The generated template includes:
+- Common configuration values (enterprise, token, output format, etc.)
+- GitHub App authentication settings
+- Example profile configurations for different use cases
+- Detailed comments explaining each option
+
+Example of generated template structure:
+```yaml
+# Common configuration values
+enterprise: "fabrikam"           # Required: Your GitHub Enterprise slug
+auth-method: "token"             # Authentication method: token or app
+token: "your-token-here"         # Required if auth-method is token
+output-format: "csv"             # Output format: csv, json, or xlsx
+output-dir: "./reports"          # Directory to store report files
+
+# Profile configurations
+profiles:
+  default:
+    organizations: true
+    repositories: true
+    # ...more settings...
+  
+  # Additional profiles
+  security-audit:
+    # ...security audit settings...
+```
+
+You can specify a different output location using the `--output` flag:
+```bash
+gh enterprise-reports init --output custom-config.yml
+```
+
 ### 🔧 Flags
 
- | Flag                       | Description                                                                 |
- |----------------------------|-----------------------------------------------------------------------------|
- | `--auth-method`            | Authentication method (`token` or `app`, defaults to `token`).             |
- | `--token`                  | Personal access token (required if `auth-method` is `token`).              |
- | `--app-id`                 | GitHub App ID (required if `auth-method` is `app`).                        |
- | `--app-private-key-file`   | Path to the GitHub App private key file (required if `auth-method` is `app`). |
- | `--app-installation-id`    | GitHub App installation ID (required if `auth-method` is `app`).           |
- | `--enterprise`             | Enterprise slug (required).                                                |
- | `--organizations`          | Generate the organizations report.                                         |
- | `--repositories`           | Generate the repositories report.                                          |
- | `--teams`                  | Generate the teams report.                                                 |
- | `--collaborators`          | Generate the collaborators report.                                         |
- | `--users`                  | Generate the users report.                                                 |
- | `--log-level`              | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).         |
- | `--workers`                | Number of concurrent workers for fetching data (default 5).                |
+| Flag                       | Description                                                                 |
+|----------------------------|-----------------------------------------------------------------------------|
+| Authentication Flags ||
+| `--auth-method`            | Authentication method (`token` or `app`, defaults to `token`).             |
+| `--token`                  | Personal access token (required if `auth-method` is `token`).              |
+| `--app-id`                 | GitHub App ID (required if `auth-method` is `app`).                        |
+| `--app-private-key-file`   | Path to the GitHub App private key file (required if `auth-method` is `app`). |
+| `--app-installation-id`    | GitHub App installation ID (required if `auth-method` is `app`).           |
+| Required Flags ||
+| `--enterprise`             | Enterprise slug (required).                                                |
+| Report Type Flags ||
+| `--organizations`          | Generate the organizations report.                                         |
+| `--repositories`           | Generate the repositories report.                                          |
+| `--teams`                  | Generate the teams report.                                                 |
+| `--collaborators`          | Generate the collaborators report.                                         |
+| `--users`                  | Generate the users report.                                                 |
+| Configuration Flags ||
+| `--profile`               | Configuration profile to use (default: "default").                         |
+| `--config-file`           | Path to config file (default is ./config.yml).                            |
+| Output Flags ||
+| `--output-format`         | Output format for reports (`csv`, `json`, or `xlsx`, default `csv`).      |
+| `--output-dir`            | Directory where report files will be saved.                               |
+| Performance & Debug Flags ||
+| `--log-level`             | Set log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`).       |
+| `--workers`               | Number of concurrent workers for fetching data (default 5).                |
 
 **notes:** 
 The `--auth-method` flag is required is only required if you are using a GitHub App. GitHub App support is experimental at this time and may not work as expected.
@@ -116,22 +191,146 @@ The `--workers` flag controls the number of concurrent workers used to fetch dat
 
 The optimal number depends on your enterprise size, network conditions, and GitHub API rate limits. Start with the default (5) and adjust as needed.
 
-### Configuration File
-You can also use a configuration file to set default values for the flags. Create a file named `config.yaml` in the repository directory with the following structure:
+
+## 🔄 Output Formats
+
+gh-enterprise-reports supports multiple output formats:
+
+- **CSV** (default): Standard comma-separated values format compatible with spreadsheet software
+- **JSON**: Structured data format ideal for programmatic processing
+- **Excel (XLSX)**: Feature-rich spreadsheet format with styling support
+
+Specify your preferred format using the `--output-format` flag:
+
+```bash
+gh enterprise-reports --enterprise <enterprise-slug> --organizations --output-format xlsx
+```
+
+## 📋 Configuration Profiles
+
+You can create configuration profiles to easily run different sets of reports with different settings:
+
+1. Create a `config.yml` file with your profiles (you can use `gh enterprise-reports init` to get started):
 
 ```yaml
-token: <your-token>
-enterprise: <enterprise-slug>
-organizations: true
-repositories: true
+# Common settings
+enterprise: "your-enterprise"
+token: "your-token"
+output_format: "csv"
 workers: 5
-log_level: info
+
+# Profile configurations
+profiles:
+  default:
+    organizations: true
+    repositories: true
+    output_dir: "reports/default"
+    
+  security-audit:
+    organizations: true
+    teams: true
+    collaborators: true
+    output_format: "xlsx"
+    output_dir: "reports/security"
+    
+  monthly-review:
+    organizations: true
+    repositories: true
+    users: true
+    output_format: "json"
+    output_dir: "reports/monthly"
+    workers: 10
+
+  inactive-users:
+    users: true
+    output_dir: "reports/users"
+    log_level: "debug"
 ```
 
-Then run the command without flags:
+2. Run reports using your profiles:
+
 ```bash
-gh enterprise-reports
+# Use the default profile
+gh enterprise-reports --profile default
+
+# Run a security audit
+gh enterprise-reports --profile security-audit
+
+# Generate monthly review reports
+gh enterprise-reports --profile monthly-review
+
+# Check for inactive users
+gh enterprise-reports --profile inactive-users
 ```
+
+3. Override profile settings with command-line flags:
+
+```bash
+# Use security-audit profile but change output format
+gh enterprise-reports --profile security-audit --output-format csv
+
+# Use monthly-review profile with different worker count
+gh enterprise-reports --profile monthly-review --workers 15
+```
+
+The command-line flags take precedence over the profile settings, allowing you to easily customize the execution without modifying the config file.
+
+## 🛠️ Configuration Examples
+
+Here are some annotated examples of the `config.yml` file:
+
+<details>
+<summary>Basic configuration</summary>
+
+```yaml
+# Minimal configuration example
+enterprise: "your-enterprise" # Your GitHub Enterprise name
+token: "ghp_xxxxxxxxxxxx"     # Personal access token
+output-format: "csv"          # Output in CSV format
+organizations: true           # Only run the organizations report
+```
+</details>
+
+<details>
+<summary>Advanced configuration with profiles</summary>
+
+```yaml
+# Common settings applied to all profiles
+enterprise: "your-enterprise"
+token: "ghp_xxxxxxxxxxxx"
+output-format: "csv"
+workers: 5
+log-level: "info"
+
+# Profile configurations for different use cases
+profiles:
+  # Default profile with standard settings
+  default:
+    organizations: true
+    repositories: true
+    output-dir: "./reports/default"
+    
+  # Comprehensive audit with all reports
+  full-audit:
+    organizations: true
+    repositories: true
+    teams: true
+    collaborators: true
+    users: true
+    output-format: "xlsx"     # Excel format for better analysis
+    output-dir: "./reports/audit"
+    workers: 10               # More workers for faster processing
+    
+  # GitHub App authentication example
+  app-auth:
+    auth-method: "app"
+    app-id: "12345"
+    app-private-key-file: "./private-key.pem"
+    app-installation-id: "67890"
+    organizations: true
+    repositories: true
+```
+</details>
 
 ---
 
@@ -263,3 +462,149 @@ This project uses the following libraries:
 ## 📜 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## 🔄 Workflow Examples
+
+Here are some common workflows that showcase how to use this tool effectively in your enterprise environment:
+
+<div class="workflow-example">
+<h3>📊 Monthly Enterprise Audit</h3>
+
+<pre>
+┌─────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
+│ Generate Reports│    │ Export to Excel  │    │ Share with Leadership│
+│ with Profile    │ ──▶│ for Analysis     │ ──▶│ or Security Team     │
+└─────────────────┘    └──────────────────┘    └──────────────────────┘
+</pre>
+
+<p><strong>Use Case:</strong> Regular enterprise-wide review of organization health, repository metrics, and user activity.</p>
+
+<pre class="command">
+# Run a comprehensive audit using the monthly-review profile
+gh enterprise-reports --profile monthly-review
+</pre>
+</div>
+
+<div class="workflow-example">
+<h3>👤 Identify Inactive Users</h3>
+
+<pre>
+┌────────────────┐    ┌────────────────┐    ┌────────────────────┐
+│ Generate Users │    │ Filter         │    │ Take Action on     │
+│ Report         │ ──▶│ Dormant Users  │ ──▶│ Inactive Accounts  │
+└────────────────┘    └────────────────┘    └────────────────────┘
+</pre>
+
+<p><strong>Use Case:</strong> Identify dormant users to optimize license usage and improve security posture.</p>
+
+<pre class="command">
+# Run the users report to identify dormant accounts
+gh enterprise-reports --profile inactive-users
+</pre>
+</div>
+
+<div class="workflow-example">
+<h3>🔒 Security Assessment Pipeline</h3>
+
+<pre>
+┌─────────────────┐    ┌────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│ Generate Reports│    │ Process JSON   │    │ Compare Against  │    │ Generate Security│
+│ in JSON Format  │ ──▶│ with Scripts   │ ──▶│ Security Baseline│ ──▶│ Compliance Report│
+└─────────────────┘    └────────────────┘    └──────────────────┘    └──────────────────┘
+</pre>
+
+<p><strong>Use Case:</strong> Integrate report data into security tools and compliance workflows.</p>
+
+<pre class="command">
+# Generate JSON data for further automated processing
+gh enterprise-reports --profile security-audit --output-format json
+</pre>
+</div>
+
+
+
+## ❓ Frequently Asked Questions
+
+<details>
+<summary>How do I handle rate limiting?</summary>
+
+The tool automatically handles rate limiting by pausing when limits are reached. You can:
+1. Reduce the `--workers` count to make fewer concurrent API calls
+2. Switch to GitHub App authentication which has higher rate limits
+3. Run during off-hours when there's less API traffic
+</details>
+
+<details>
+<summary>What permissions does my token need?</summary>
+
+Your token needs these permissions:
+- `read:org` for organization details
+- `repo` for repository details
+- `audit_log` for user login events
+- `user` for user details
+- `read:enterprise` for enterprise details
+
+For GitHub App authentication, configure the same permission scopes.
+</details>
+
+<details>
+<summary>Can I automate report generation?</summary>
+
+Yes! You can use GitHub Actions or any scheduler to run reports periodically:
+
+```yaml
+# Example GitHub Actions workflow for weekly enterprise reporting
+name: Weekly Enterprise Report
+
+# Run every Monday at midnight
+on:
+  schedule:
+    - cron: '0 0 * * MON'
+
+jobs:
+  generate-reports:
+    name: Generate Enterprise Reports
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Check out the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      # Install the gh-enterprise-reports extension
+      - name: Install Extension
+        run: gh extension install kuhlman-labs/gh-enterprise-reports
+        env:
+          # GitHub CLI is preinstalled on all GitHub-hosted runners
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Generate the enterprise reports    
+      - name: Generate Reports
+        run: |
+          gh enterprise-reports \
+            --token ${{ secrets.ENTERPRISE_TOKEN }} \
+            --enterprise your-enterprise \
+            --organizations \
+            --repositories
+      
+      # Upload reports as artifacts    
+      - name: Upload Reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: enterprise-reports
+          path: ./reports/
+```
+</details>
+
+<details>
+<summary>How large are the generated reports?</summary>
+
+Report sizes vary based on your enterprise size:
+- Small enterprises (< 50 orgs): Usually < 10MB
+- Medium enterprises (50-200 orgs): 10-50MB
+- Large enterprises (> 200 orgs): Can exceed 100MB
+
+Consider the Excel format for larger reports as it compresses the data better.
+</details>
+
+---

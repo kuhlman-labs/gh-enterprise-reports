@@ -40,6 +40,8 @@ type Config struct {
 	EnterpriseSlug          string `mapstructure:"enterprise"`
 	LogLevel                string `mapstructure:"log-level"`
 	BaseURL                 string `mapstructure:"base-url"`
+	OutputFormat            string `mapstructure:"output-format"` // Output format (csv, json, xlsx)
+	OutputDir               string `mapstructure:"output-dir"`    // Directory to save output files
 }
 
 // Validate checks for required flags based on the chosen authentication method.
@@ -98,6 +100,33 @@ func (c *Config) Validate() error {
 		} else {
 			c.BaseURL = strings.TrimSuffix(c.BaseURL, "/")
 		}
+	}
+
+	// Output format validation
+	if c.OutputFormat != "" {
+		format := strings.ToLower(c.OutputFormat)
+		if format != "csv" && format != "json" && format != "xlsx" {
+			errs = append(errs, fmt.Errorf("output-format must be one of: csv, json, xlsx; got %q", c.OutputFormat))
+		}
+		c.OutputFormat = format
+	} else {
+		c.OutputFormat = "csv" // Default to CSV
+	}
+
+	// Output directory validation
+	if c.OutputDir != "" {
+		if _, err := os.Stat(c.OutputDir); err != nil {
+			if os.IsNotExist(err) {
+				// Try to create the directory
+				if err := os.MkdirAll(c.OutputDir, 0755); err != nil {
+					errs = append(errs, fmt.Errorf("output-dir %q does not exist and could not be created: %v", c.OutputDir, err))
+				}
+			} else {
+				errs = append(errs, fmt.Errorf("error accessing output-dir %q: %v", c.OutputDir, err))
+			}
+		}
+	} else {
+		c.OutputDir = "." // Default to current directory
 	}
 
 	// log-level validation

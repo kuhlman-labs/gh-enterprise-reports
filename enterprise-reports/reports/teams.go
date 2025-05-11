@@ -43,10 +43,14 @@ type TeamReport struct {
 // external group associations, and team membership.
 func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting teams report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
-	// Validate output path early to catch file creation errors before API calls
-	if err := validateFilePath(filename); err != nil {
-		return err
+
+	// Create appropriate report writer based on file extension
+	reportWriter, reportErr := NewReportWriter(filename)
+	if reportErr != nil {
+		return reportErr
 	}
+	defer reportWriter.Close()
+
 	header := []string{
 		"Team ID",
 		"Owner",
@@ -54,6 +58,11 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 		"Team Slug",
 		"External Group",
 		"Members",
+	}
+
+	// Write header to report
+	if headerErr := reportWriter.WriteHeader(header); headerErr != nil {
+		return fmt.Errorf("failed to write header: %w", headerErr)
 	}
 	// Check cache for organizations or fetch from API
 	var orgs []*github.Organization
@@ -165,6 +174,6 @@ func TeamsReport(ctx context.Context, restClient *github.Client, graphqlClient *
 	// Burst matches worker count for responsiveness.
 	limiter := rate.NewLimiter(rate.Limit(5), workerCount) // e.g., 5 requests/sec, burst of workerCount
 
-	// Run the report
-	return RunReport(ctx, items, processor, formatter, limiter, workerCount, filename, header)
+	// Run the report using the new report writer interface
+	return RunReportWithWriter(ctx, items, processor, formatter, limiter, workerCount, reportWriter)
 }

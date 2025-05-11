@@ -40,11 +40,15 @@ type UserReport struct {
 // The report includes user ID, login name, display name, email address, last login time,
 // and dormancy status.
 func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
-	// Validate output path early to catch file creation errors before API calls
-	if err := validateFilePath(filename); err != nil {
-		return err
-	}
 	slog.Info("starting users report", "enterprise", enterpriseSlug, "filename", filename, "workers", workerCount)
+
+	// Create appropriate report writer based on file extension
+	reportWriter, reportErr := NewReportWriter(filename)
+	if reportErr != nil {
+		return reportErr
+	}
+	defer reportWriter.Close()
+
 	header := []string{
 		"ID",
 		"Login",
@@ -52,6 +56,11 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		"Email",
 		"Last Login(90 days)",
 		"Dormant?",
+	}
+
+	// Write header to report
+	if headerErr := reportWriter.WriteHeader(header); headerErr != nil {
+		return fmt.Errorf("failed to write header: %w", headerErr)
 	}
 
 	// Inactivity threshold and fetch user logins
@@ -132,5 +141,6 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	// Burst matches worker count for responsiveness.
 	limiter := rate.NewLimiter(rate.Limit(10), workerCount) // e.g., 10 requests/sec, burst of workerCount
 
-	return RunReport(ctx, users, processor, formatter, limiter, workerCount, filename, header)
+	// Run the report using the new report writer interface
+	return RunReportWithWriter(ctx, users, processor, formatter, limiter, workerCount, reportWriter)
 }

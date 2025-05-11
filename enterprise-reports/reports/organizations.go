@@ -49,10 +49,14 @@ type OrgMemberInfo struct {
 // a JSON-encoded list of members with their details, and the total member count.
 func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, restClient *github.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting organizations report", slog.String("enterprise", enterpriseSlug), slog.String("filename", filename), slog.Int("workers", workerCount))
-	// Validate output path early to catch file creation errors before API calls
-	if err := validateFilePath(filename); err != nil {
+
+	// Create appropriate report writer based on file extension
+	reportWriter, err := NewReportWriter(filename)
+	if err != nil {
 		return err
 	}
+	defer reportWriter.Close()
+
 	header := []string{
 		"Organization",
 		"Organization ID",
@@ -61,9 +65,13 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 		"Total Members",
 	}
 
+	// Write header to report
+	if err := reportWriter.WriteHeader(header); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+
 	// Check cache for organizations or fetch from API
 	var orgs []*github.Organization
-	var err error
 
 	if cachedOrgs, found := cache.GetEnterpriseOrgs(); found {
 		slog.Info("using cached enterprise organizations")
@@ -160,6 +168,6 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	// Burst matches worker count for responsiveness.
 	limiter := rate.NewLimiter(rate.Limit(5), workerCount) // e.g., 5 requests/sec, burst of workerCount
 
-	// Run the report
-	return RunReport(ctx, orgs, processor, formatter, limiter, workerCount, filename, header)
+	// Run the report using the new report writer interface
+	return RunReportWithWriter(ctx, orgs, processor, formatter, limiter, workerCount, reportWriter)
 }

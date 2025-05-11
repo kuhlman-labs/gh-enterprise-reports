@@ -48,11 +48,20 @@ type CollaboratorInfo struct {
 // with login, ID, and permission level for each collaborator.
 func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphClient *githubv4.Client, enterpriseSlug, filename string, workerCount int, cache *utils.SharedCache) error {
 	slog.Info("starting collaborators report", "enterprise", enterpriseSlug, "filename", filename, "workers", workerCount)
-	// Validate output path early to catch file creation errors before API calls
-	if err := validateFilePath(filename); err != nil {
-		return err
+
+	// Create appropriate report writer based on file extension
+	reportWriter, reportErr := NewReportWriter(filename)
+	if reportErr != nil {
+		return reportErr
 	}
+	defer reportWriter.Close()
+
 	header := []string{"Repository", "Collaborators"}
+
+	// Write header to report
+	if headerErr := reportWriter.WriteHeader(header); headerErr != nil {
+		return fmt.Errorf("failed to write header: %w", headerErr)
+	}
 
 	// Check cache for organizations or fetch from API
 	var orgs []*github.Organization
@@ -144,5 +153,6 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	// with a burst matching the number of workers.
 	limiter := rate.NewLimiter(rate.Limit(10), workerCount) // e.g., 10 requests/sec, burst of workerCount
 
-	return RunReport(ctx, repos, processor, formatter, limiter, workerCount, filename, header)
+	// Run the report using the new report writer interface
+	return RunReportWithWriter(ctx, repos, processor, formatter, limiter, workerCount, reportWriter)
 }
