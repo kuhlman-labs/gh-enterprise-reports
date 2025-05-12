@@ -21,8 +21,8 @@ gh enterprise-reports --profile default
 ```
 
 ## Table of Contents
-- [🚀 Quick Start](#-quick-start)
-- [📋 Features](#-features)
+- [🚀 Quick Start](#🚀quick-start)
+- [📋 Features](#📋Features)
 - [⚙️ Prerequisites](#-prerequisites)
 - [🚀 Install manually](#-install-manually)
 - [🚀 Install with GitHub CLI](#-install-with-github-cli)
