@@ -352,7 +352,7 @@ func (m *ManagerProvider) Validate() error {
 		if _, err := os.Stat(m.outputDir); err != nil {
 			if os.IsNotExist(err) {
 				// Try to create the directory
-				if err := os.MkdirAll(m.outputDir, 0755); err != nil {
+				if err := os.MkdirAll(m.outputDir, 0750); err != nil {
 					errs = append(errs, fmt.Errorf("output-dir %q does not exist and could not be created: %v", m.outputDir, err))
 				}
 			} else {
