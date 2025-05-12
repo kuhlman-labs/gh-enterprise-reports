@@ -1,7 +1,5 @@
-// Package enterprisereports provides functionality for generating reports about GitHub Enterprise resources.
-// It handles configuration parsing, client initialization, and report generation for organizations,
-// repositories, teams, collaborators, and users across a GitHub Enterprise instance.
-package enterprisereports
+// Package logging provides logging functionality for the GitHub Enterprise Reports tool.
+package logging
 
 import (
 	"context"

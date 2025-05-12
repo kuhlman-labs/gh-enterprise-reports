@@ -12,8 +12,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RunReportWithWriter is an enhanced version of RunReport that uses the new ReportWriter interface
-// instead of directly writing to a CSV file. This allows for multiple output formats.
+// RunReportWithWriter runs a report and outputs the results using the provided writer.
+// It uses the ReportWriter interface instead of directly writing to a CSV file,
+// which allows for multiple output formats.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout

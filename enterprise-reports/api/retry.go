@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	// DefaultRetryCount is the default number of retries for API calls
+	// DefaultRetryCount is the default number of retries for API calls.
 	DefaultRetryCount = 3
 
-	// DefaultInitialBackoff is the default initial backoff duration
+	// DefaultInitialBackoff is the default initial backoff duration.
 	DefaultInitialBackoff = 500 * time.Millisecond
 )
 
@@ -51,7 +51,7 @@ func NewRetryableRESTClient(client *github.Client, maxRetries int, initialBackof
 	}
 }
 
-// NewRetryableGraphQLClient creates a new retryable GraphQL client
+// NewRetryableGraphQLClient creates a new retryable GraphQL client.
 func NewRetryableGraphQLClient(client *githubv4.Client, maxRetries int, initialBackoff time.Duration) *RetryableGraphQLClient {
 	if maxRetries <= 0 {
 		maxRetries = DefaultRetryCount

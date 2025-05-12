@@ -23,7 +23,7 @@ type SharedCache struct {
 	enterpriseUsersFetched bool
 }
 
-// NewSharedCache creates a new shared cache for GitHub data
+// NewSharedCache creates a new shared cache for GitHub data.
 func NewSharedCache() *SharedCache {
 	return &SharedCache{
 		orgRepositories:   make(map[string][]*github.Repository),

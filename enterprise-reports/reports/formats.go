@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/utils"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -43,7 +44,7 @@ type CSVReportWriter struct {
 
 // NewCSVReportWriter creates a new CSV report writer.
 func NewCSVReportWriter(path string) (*CSVReportWriter, error) {
-	if err := validateFilePath(path); err != nil {
+	if err := utils.ValidateFilePath(path); err != nil {
 		return nil, err
 	}
 
@@ -96,7 +97,7 @@ type JSONReportWriter struct {
 
 // NewJSONReportWriter creates a new JSON report writer.
 func NewJSONReportWriter(path string) (*JSONReportWriter, error) {
-	if err := validateFilePath(path); err != nil {
+	if err := utils.ValidateFilePath(path); err != nil {
 		return nil, err
 	}
 
@@ -155,7 +156,7 @@ type ExcelReportWriter struct {
 
 // NewExcelReportWriter creates a new Excel report writer.
 func NewExcelReportWriter(path string) (*ExcelReportWriter, error) {
-	if err := validateFilePath(path); err != nil {
+	if err := utils.ValidateFilePath(path); err != nil {
 		return nil, err
 	}
 
