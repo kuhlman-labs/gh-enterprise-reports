@@ -77,38 +77,51 @@ For pull requests:
 
 ## Project Structure
 
-GitHub Enterprise Reports is organized into a modular structure to maintain separation of concerns and facilitate testing. The main entry point is `main.go`, which initializes the application, sets up configuration and logging, and runs the command-line interface.
+GitHub Enterprise Reports is organized into a modular structure to maintain separation of concerns and facilitate testing. The main entry point is `main.go`, which initializes the application and delegates to the `cmd` package for command-line interface handling.
 
 ### Package Overview
 
-The project is structured into the following packages in the `enterprise-reports` directory:
+The project is structured into the following packages:
 
-- **api/**: Provides functionality for interacting with GitHub's REST and GraphQL APIs
-  - `graphql.go`: Handles GraphQL API operations
-  - `rest.go`: Handles REST API operations
-  - `rate-limits.go`: Manages API rate limiting
-  - `retry.go`: Implements retry logic for API calls
+- **cmd/**: Contains command-line interface handling logic
+  - `root.go`: Implements the root command and base CLI functionality
+  - `init.go`: Implements the init command for creating configuration files
+  - `logging.go`: Manages application logging setup
 
-- **config/**: Manages configuration for the application
-  - `config.go`: Defines the configuration structure
-  - `provider.go`: Interface for configuration providers
-  - `standard_provider.go`: Standard implementation of the configuration provider
-  - `manager_provider.go`: Manages multiple configuration providers
+- **enterprise-reports/**: Contains the core application packages
+  - **api/**: Provides functionality for interacting with GitHub's REST and GraphQL APIs
+    - `graphql.go`: Handles GraphQL API operations
+    - `rest.go`: Handles REST API operations
+    - `rate-limits.go`: Manages API rate limiting
+    - `retry.go`: Implements retry logic for API calls
 
-- **logging/**: Provides logging functionality
-  - `logging.go`: Configures and manages structured logging
+  - **config/**: Manages configuration for the application
+    - `config.go`: Defines the configuration structure
+    - `provider.go`: Interface for configuration providers
+    - `standard_provider.go`: Standard implementation of the configuration provider
+    - `manager_provider.go`: Manages multiple configuration providers
 
-- **report/**: Core report generation functionality
-  - `executor.go`: Executes report generation workflows
+  - **logging/**: Provides logging functionality
+    - `logging.go`: Configures and manages structured logging
 
-- **reports/**: Implements specific report types
-  - `collaborators.go`: Generates reports on repository collaborators
-  - `organizations.go`: Generates reports on enterprise organizations
-  - `repositories.go`: Generates reports on repositories
-  - `teams.go`: Generates reports on teams
-  - `users.go`: Generates reports on users
-  - `formats.go`: Handles output formatting
-  - `runner.go`: Orchestrates the execution of multiple reports
+  - **report/**: Core report generation functionality
+    - `executor.go`: Executes report generation workflows
+
+  - **reports/**: Implements specific report types
+    - `collaborators.go`: Generates reports on repository collaborators
+    - `organizations.go`: Generates reports on enterprise organizations
+    - `repositories.go`: Generates reports on repositories
+    - `teams.go`: Generates reports on teams
+    - `users.go`: Generates reports on users
+    - `formats.go`: Handles output formatting
+    - `runner.go`: Orchestrates the execution of multiple reports
+
+  - **utils/**: Utility functions and helpers
+    - `cache.go`: Provides caching mechanisms for API data
+    - `concurrent.go`: Utilities for concurrent operations
+    - `errors.go`: Error handling utilities
+    - `file.go`: File system operations
+    - `github.go`: GitHub-specific utility functions
 
 - **utils/**: Utility functions and helpers
   - `cache.go`: Provides caching mechanisms for API data

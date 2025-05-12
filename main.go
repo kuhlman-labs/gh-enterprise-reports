@@ -1,6 +1,5 @@
 // Package main is the entry point for the GitHub Enterprise Reports application.
-// It initializes logging, sets up configuration, handles signals, and executes reports
-// based on the provided command-line flags.
+// It initializes the application and delegates command handling to the cmd package.
 package main
 
 import (
@@ -9,35 +8,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
-	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/config"
-	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/logging"
-	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/report"
-	"github.com/spf13/cobra"
+	"github.com/kuhlman-labs/gh-enterprise-reports/cmd"
 )
 
 // main initializes the application, sets up the configuration and logging,
 // and runs the command-line interface.
 func main() {
-	// Open log file in append mode.
-	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		slog.Error("failed to open log file", "error", err)
+	// Initialize logging
+	if err := cmd.SetupLogging(); err != nil {
+		slog.Error("failed to set up logging", "error", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if err := logFile.Close(); err != nil {
-			slog.Error("failed to close log file", "error", err)
-		}
-	}()
-
-	// initialize slog to file+terminal at Info level
-	logging.SetupLogging(logFile, slog.LevelInfo)
-
-	// Create a new configuration manager using the new interface
-	configProvider := config.NewManagerProvider()
+	defer cmd.CloseLogging()
 
 	// Add context cancellation for long-running operations.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,110 +35,10 @@ func main() {
 		cancel()
 	}()
 
-	// Root command for running reports
-	rootCmd := &cobra.Command{
-		Use:   "gh-enterprise-reports",
-		Short: "A CLI extension to generate GitHub Enterprise reports",
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			return configProvider.LoadConfig()
-		},
-		Run: func(cmd *cobra.Command, args []string) {
-			// Set log level from configuration.
-			var level slog.Level
-			if err := level.UnmarshalText([]byte(configProvider.GetLogLevel())); err != nil {
-				slog.Warn("invalid log level specified, defaulting to info", "error", err)
-				level = slog.LevelInfo
-			}
-			// reconfigure slog to both outputs at chosen level
-			logging.SetupLogging(logFile, level)
-
-			// Create REST and GraphQL clients with retry mechanism using the new interface
-			restClient, err := configProvider.CreateRESTClient()
-			if err != nil {
-				slog.Error("creating rest client", "error", err)
-				os.Exit(1)
-			}
-			// Create retryable REST client
-			retryableREST := api.NewRetryableRESTClient(restClient, 3, 500*time.Millisecond)
-			slog.Debug("created retryable REST client", "maxRetries", retryableREST.MaxRetries)
-
-			graphQLClient, err := configProvider.CreateGraphQLClient()
-			if err != nil {
-				slog.Error("creating graphql client", "error", err)
-				os.Exit(1)
-			}
-			// Create retryable GraphQL client
-			retryableGraphQL := api.NewRetryableGraphQLClient(graphQLClient, 3, 500*time.Millisecond)
-			slog.Debug("created retryable GraphQL client", "maxRetries", retryableGraphQL.MaxRetries)
-
-			// Log the configuration details with a standout banner.
-			slog.Info("==================================================")
-			slog.Info("configuration values:",
-				"auth_method", configProvider.GetAuthMethod(),
-				"base_url", configProvider.GetBaseURL(),
-				"enterprise", configProvider.GetEnterpriseSlug(),
-				"output_format", configProvider.GetOutputFormat(),
-				"output_dir", configProvider.GetOutputDir(),
-				"profile", configProvider.GetProfile(),
-			)
-			slog.Info("==================================================")
-
-			// Ensure rate limits are sufficient before proceeding.
-			api.EnsureRateLimits(ctx, restClient)
-
-			// Start monitoring rate limits every 30 seconds asynchronously.
-			go api.MonitorRateLimits(ctx, restClient.RateLimit, graphQLClient, 30*time.Second)
-
-			// Create a new report executor using our configuration provider
-			reportExecutor := report.NewReportExecutor(configProvider)
-
-			// Execute the selected reports using the new interface-based approach
-			reportExecutor.Execute(ctx, restClient, graphQLClient)
-		},
-	}
-
-	// Initialize config command
-	initCmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialize a new configuration file",
-		Run: func(cmd *cobra.Command, args []string) {
-			outputPath, _ := cmd.Flags().GetString("output")
-			configFile := outputPath
-			if configFile == "" {
-				configFile = "config.yml"
-			}
-
-			if _, err := os.Stat(configFile); err == nil {
-				slog.Error("configuration file already exists", "file", configFile)
-				os.Exit(1)
-			}
-
-			templateData, err := os.ReadFile("config-template.yml")
-			if err != nil {
-				slog.Error("failed to read template file", "error", err)
-				os.Exit(1)
-			}
-
-			if err := os.WriteFile(configFile, templateData, 0600); err != nil {
-				slog.Error("failed to write configuration file", "error", err)
-				os.Exit(1)
-			}
-
-			slog.Info("created new configuration file", "file", configFile)
-			slog.Info("please edit the file to add your GitHub Enterprise details")
-		},
-	}
-
-	// Add output flag to init command
-	initCmd.Flags().StringP("output", "o", "", "Output path for the generated configuration file")
-
-	rootCmd.AddCommand(initCmd)
-
-	// Initialize CLI flags using the config provider
-	configProvider.InitializeFlags(rootCmd)
-
-	if err := rootCmd.Execute(); err != nil {
-		slog.Error("executing command", "error", err)
+	// Initialize and execute the CLI commands
+	cmd.Init()
+	if err := cmd.Execute(ctx); err != nil {
+		slog.Error("command execution error", "error", err)
 		os.Exit(1)
 	}
 }
