@@ -47,7 +47,11 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	if reportErr != nil {
 		return reportErr
 	}
-	defer reportWriter.Close()
+	defer func() {
+		if err := reportWriter.Close(); err != nil {
+			slog.Error("Failed to close report writer", "error", err)
+		}
+	}()
 
 	header := []string{
 		"ID",
@@ -103,9 +107,22 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 		}
 		// Last login
 		lastLogin := userLogins[u.GetLogin()]
-		recent := lastLogin.After(referenceTime)
-		// Dormant
-		dormant, err := isDormant(ctx, restClient, graphQLClient, u.GetLogin(), referenceTime, recent)
+		recentLogin := lastLogin.After(referenceTime)
+
+		// Recent activity checks
+		recentEvents, err := api.HasRecentEvents(ctx, restClient, u.GetLogin(), referenceTime)
+		if err != nil {
+			slog.Debug("failed to fetch recent events", "user", u.GetLogin(), "error", err)
+			recentEvents = false // Default to false if error occurs
+		}
+		recentContributions, err := api.HasRecentContributions(ctx, graphQLClient, u.GetLogin(), referenceTime)
+		if err != nil {
+			slog.Debug("failed to fetch recent contributions", "user", u.GetLogin(), "error", err)
+			recentContributions = false // Default to false if error occurs
+		}
+
+		// Dormancy check
+		dormant, err := utils.IsDormant(u.GetLogin(), recentEvents, recentContributions, recentLogin)
 		if err != nil {
 			slog.Debug("dormancy check failed", "user", u.GetLogin(), "error", err)
 			dormant = false // Default to false if error occurs

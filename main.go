@@ -11,11 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	enterprisereports "github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports"
 	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/api"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/config"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/logging"
+	"github.com/kuhlman-labs/gh-enterprise-reports/enterprise-reports/report"
 	"github.com/spf13/cobra"
 )
 
+// main initializes the application, sets up the configuration and logging,
+// and runs the command-line interface.
 func main() {
 	// Open log file in append mode.
 	logFile, err := os.OpenFile("gh-enterprise-reports.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -30,10 +34,10 @@ func main() {
 	}()
 
 	// initialize slog to file+terminal at Info level
-	enterprisereports.SetupLogging(logFile, slog.LevelInfo)
+	logging.SetupLogging(logFile, slog.LevelInfo)
 
-	// Create a new configuration manager.
-	configManager := enterprisereports.NewConfigManager()
+	// Create a new configuration manager using the new interface
+	configProvider := config.NewManagerProvider()
 
 	// Add context cancellation for long-running operations.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -53,23 +57,20 @@ func main() {
 		Use:   "gh-enterprise-reports",
 		Short: "A CLI extension to generate GitHub Enterprise reports",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			return configManager.LoadConfig()
+			return configProvider.LoadConfig()
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Get the config from the manager
-			config := configManager.Config
-
 			// Set log level from configuration.
 			var level slog.Level
-			if err := level.UnmarshalText([]byte(config.LogLevel)); err != nil {
+			if err := level.UnmarshalText([]byte(configProvider.GetLogLevel())); err != nil {
 				slog.Warn("invalid log level specified, defaulting to info", "error", err)
 				level = slog.LevelInfo
 			}
 			// reconfigure slog to both outputs at chosen level
-			enterprisereports.SetupLogging(logFile, level)
+			logging.SetupLogging(logFile, level)
 
-			// Create REST and GraphQL clients with retry mechanism
-			restClient, err := enterprisereports.NewRESTClient(ctx, config)
+			// Create REST and GraphQL clients with retry mechanism using the new interface
+			restClient, err := configProvider.CreateRESTClient()
 			if err != nil {
 				slog.Error("creating rest client", "error", err)
 				os.Exit(1)
@@ -78,7 +79,7 @@ func main() {
 			retryableREST := api.NewRetryableRESTClient(restClient, 3, 500*time.Millisecond)
 			slog.Debug("created retryable REST client", "maxRetries", retryableREST.MaxRetries)
 
-			graphQLClient, err := enterprisereports.NewGraphQLClient(ctx, config)
+			graphQLClient, err := configProvider.CreateGraphQLClient()
 			if err != nil {
 				slog.Error("creating graphql client", "error", err)
 				os.Exit(1)
@@ -90,12 +91,12 @@ func main() {
 			// Log the configuration details with a standout banner.
 			slog.Info("==================================================")
 			slog.Info("configuration values:",
-				"auth_method", config.AuthMethod,
-				"base_url", config.BaseURL,
-				"enterprise", config.EnterpriseSlug,
-				"output_format", config.OutputFormat,
-				"output_dir", config.OutputDir,
-				"profile", configManager.GetProfile(),
+				"auth_method", configProvider.GetAuthMethod(),
+				"base_url", configProvider.GetBaseURL(),
+				"enterprise", configProvider.GetEnterpriseSlug(),
+				"output_format", configProvider.GetOutputFormat(),
+				"output_dir", configProvider.GetOutputDir(),
+				"profile", configProvider.GetProfile(),
 			)
 			slog.Info("==================================================")
 
@@ -105,8 +106,11 @@ func main() {
 			// Start monitoring rate limits every 30 seconds asynchronously.
 			go api.MonitorRateLimits(ctx, restClient.RateLimit, graphQLClient, 30*time.Second)
 
-			// Run the reports with the new configManager
-			enterprisereports.RunReportsWithConfig(ctx, configManager, restClient, graphQLClient)
+			// Create a new report executor using our configuration provider
+			reportExecutor := report.NewReportExecutor(configProvider)
+
+			// Execute the selected reports using the new interface-based approach
+			reportExecutor.Execute(ctx, restClient, graphQLClient)
 		},
 	}
 
@@ -147,8 +151,8 @@ func main() {
 
 	rootCmd.AddCommand(initCmd)
 
-	// Initialize CLI flags using the config manager
-	configManager.InitializeFlags(rootCmd)
+	// Initialize CLI flags using the config provider
+	configProvider.InitializeFlags(rootCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		slog.Error("executing command", "error", err)

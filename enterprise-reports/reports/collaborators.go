@@ -54,7 +54,11 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 	if reportErr != nil {
 		return reportErr
 	}
-	defer reportWriter.Close()
+	defer func() {
+		if err := reportWriter.Close(); err != nil {
+			slog.Error("Failed to close report writer", "error", err)
+		}
+	}()
 
 	header := []string{"Repository", "Collaborators"}
 
@@ -126,7 +130,7 @@ func CollaboratorsReport(ctx context.Context, restClient *github.Client, graphCl
 
 		var infos []CollaboratorInfo
 		for _, c := range cols {
-			infos = append(infos, CollaboratorInfo{c.GetLogin(), c.GetID(), getHighestPermission(c.GetPermissions())})
+			infos = append(infos, CollaboratorInfo{c.GetLogin(), c.GetID(), utils.GetHighestPermission(c.GetPermissions())})
 		}
 		return &CollaboratorReport{Repository: repo, Collaborators: infos}, nil
 	}

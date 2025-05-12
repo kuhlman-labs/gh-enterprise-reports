@@ -22,7 +22,7 @@ gh enterprise-reports --profile default
 
 ## Table of Contents
 - [🚀 Quick Start](#-quick-start)
-- [📋 Features](#-features)
+- [📋 Features](#-Features)
 - [⚙️ Prerequisites](#-prerequisites)
 - [🚀 Install manually](#-install-manually)
 - [🚀 Install with GitHub CLI](#-install-with-github-cli)
@@ -32,6 +32,7 @@ gh enterprise-reports --profile default
 - [🔄 Output Formats](#-output-formats)
 - [📋 Configuration Profiles](#-configuration-profiles)
 - [🛠️ Configuration Examples](#-configuration-examples)
+- [🔐 GitHub App Authentication](#-github-app-authentication)
 - [📊 Sample Output](#-sample-output)
 - [📝 Logging](#-logging)
 - [🛠️ Troubleshooting](#-troubleshooting)
@@ -334,6 +335,47 @@ profiles:
 
 ---
 
+## 🔐 GitHub App Authentication
+
+This tool supports GitHub App authentication as an alternative to personal access tokens, offering advantages like higher rate limits and more granular permissions.
+
+<details>
+<summary>Benefits of GitHub App Authentication</summary>
+
+- **Higher Rate Limits**: GitHub Apps have higher API rate limits than personal access tokens
+- **Fine-grained Permissions**: You can specify exactly what permissions the app needs
+- **No User Association**: The app is not tied to a specific user account
+- **Automatic Token Refresh**: Tokens are automatically refreshed and rotated
+- **Enhanced Security**: No need to store long-lived personal access tokens
+</details>
+
+<details>
+<summary>Quick Setup Example</summary>
+
+```yaml
+# Using GitHub App authentication in config.yml
+enterprise: "your-enterprise"
+auth-method: "app"
+app-id: 12345
+app-private-key-file: "./private-key.pem"
+app-installation-id: 67890
+organizations: true
+```
+
+```bash
+# Using GitHub App authentication via command line
+gh enterprise-reports \
+  --auth-method app \
+  --app-id 12345 \
+  --app-private-key-file ./private-key.pem \
+  --app-installation-id 67890 \
+  --enterprise your-enterprise \
+  --organizations
+```
+</details>
+
+---
+
 ## 📊 Sample Output
 
 <details>
@@ -440,11 +482,7 @@ https://github.com/kuhlman-labs/gh-enterprise-reports/issues
 
 ## 🤝 Contributing
 
-We welcome contributions! To contribute:
-
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Submit a pull request with a detailed description of your changes.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
 
 ---
 
@@ -508,8 +546,8 @@ gh enterprise-reports --profile inactive-users
 
 <pre>
 ┌─────────────────┐    ┌────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│ Generate Reports│    │ Process JSON   │    │ Compare Against  │    │ Generate Security│
-│ in JSON Format  │ ──▶│ with Scripts   │ ──▶│ Security Baseline│ ──▶│ Compliance Report│
+│ Generate Reports│    │ Process JSON   │    ┌──────────────────┐    │ Generate Security│
+│ in JSON Format  │ ──▶│ with Scripts   │ ──▶│ Compare Against  │ ──▶│ Compliance Report│
 └─────────────────┘    └────────────────┘    └──────────────────┘    └──────────────────┘
 </pre>
 
@@ -606,5 +644,3 @@ Report sizes vary based on your enterprise size:
 
 Consider the Excel format for larger reports as it compresses the data better.
 </details>
-
----

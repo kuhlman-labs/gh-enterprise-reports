@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	// DefaultRetryCount is the default number of retries for API calls
+	// DefaultRetryCount is the default number of retries for API calls.
 	DefaultRetryCount = 3
 
-	// DefaultInitialBackoff is the default initial backoff duration
+	// DefaultInitialBackoff is the default initial backoff duration.
 	DefaultInitialBackoff = 500 * time.Millisecond
 )
 
@@ -51,7 +51,7 @@ func NewRetryableRESTClient(client *github.Client, maxRetries int, initialBackof
 	}
 }
 
-// NewRetryableGraphQLClient creates a new retryable GraphQL client
+// NewRetryableGraphQLClient creates a new retryable GraphQL client.
 func NewRetryableGraphQLClient(client *githubv4.Client, maxRetries int, initialBackoff time.Duration) *RetryableGraphQLClient {
 	if maxRetries <= 0 {
 		maxRetries = DefaultRetryCount
@@ -68,7 +68,7 @@ func NewRetryableGraphQLClient(client *githubv4.Client, maxRetries int, initialB
 
 // ExecuteRESTWithRetry executes a REST API call with retry logic
 func (c *RetryableRESTClient) ExecuteRESTWithRetry(ctx context.Context, fn func() error) error {
-	var lastErr error
+	var currentErr error
 
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
 		// Check for context cancellation
@@ -85,10 +85,9 @@ func (c *RetryableRESTClient) ExecuteRESTWithRetry(ctx context.Context, fn func(
 			return nil
 		}
 
-		lastErr = err
-
-		// Log and determine if we should retry
-		retryable := true
+		// Process the error to determine if it's retryable
+		var processedErr error
+		var retryable bool
 
 		// Check if error is from GitHub API
 		if ghErr, ok := err.(*github.ErrorResponse); ok {
@@ -101,32 +100,38 @@ func (c *RetryableRESTClient) ExecuteRESTWithRetry(ctx context.Context, fn func(
 				// Get retry-after header if available
 				retryAfter := ghErr.Response.Header.Get("Retry-After")
 				slog.Warn("rate limited by GitHub API", "retry_after", retryAfter)
-				lastErr = utils.NewAppError(utils.ErrorTypeRateLimit, "GitHub API rate limit exceeded", err)
+				processedErr = utils.NewAppError(utils.ErrorTypeRateLimit, "GitHub API rate limit exceeded", err)
+				retryable = true
 			default:
 				// General API error, may be retryable
-				lastErr = utils.NewAppError(utils.ErrorTypeAPI, "Error during API call", err)
+				processedErr = utils.NewAppError(utils.ErrorTypeAPI, "Error during API call", err)
+				retryable = true
 			}
 		} else if appErr, ok := err.(*utils.AppError); ok {
-			lastErr = appErr
+			processedErr = appErr
 			retryable = appErr.Retryable
 		} else {
 			// Other errors
-			lastErr = utils.NewAppError(utils.ErrorTypeGeneral, "Error during API call", err)
+			processedErr = utils.NewAppError(utils.ErrorTypeGeneral, "Error during API call", err)
+			retryable = true
 		}
+
+		// Store the current error for potential return
+		currentErr = processedErr
 
 		// If error is not retryable or this was our last attempt, return
 		if !retryable || attempt >= c.MaxRetries {
 			if attempt >= c.MaxRetries {
-				return fmt.Errorf("max retries reached: %w", lastErr)
+				return fmt.Errorf("max retries reached: %w", currentErr)
 			}
-			return lastErr
+			return currentErr
 		}
 
 		// Calculate backoff for next retry
 		backoff := c.InitialBackoff * (1 << attempt)
 		jitter := time.Duration(float64(backoff) * (0.5 + 0.5*float64(time.Now().Nanosecond())/float64(1e9)))
 
-		slog.Warn("retrying API call", "error", lastErr, "attempt", attempt, "backoff", backoff+jitter)
+		slog.Warn("retrying API call", "error", currentErr, "attempt", attempt, "backoff", backoff+jitter)
 
 		// Wait before retrying
 		select {
@@ -137,12 +142,12 @@ func (c *RetryableRESTClient) ExecuteRESTWithRetry(ctx context.Context, fn func(
 		}
 	}
 
-	return fmt.Errorf("max retries reached: %w", lastErr)
+	return fmt.Errorf("max retries reached: %w", currentErr)
 }
 
 // ExecuteGraphQLWithRetry executes a GraphQL API call with retry logic
 func (c *RetryableGraphQLClient) ExecuteGraphQLWithRetry(ctx context.Context, fn func() error) error {
-	var lastErr error
+	var currentErr error
 
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
 		// Check for context cancellation
@@ -159,41 +164,46 @@ func (c *RetryableGraphQLClient) ExecuteGraphQLWithRetry(ctx context.Context, fn
 			return nil
 		}
 
-		lastErr = err
 		slog.Debug("GraphQL query error", "error", err, "attempt", attempt)
 
-		// Determine if we should retry
-		retryable := true
+		// Process the error to determine if it's retryable
+		var processedErr error
+		var retryable bool
 
 		// GraphQL errors are more complex to parse, but we can do some basic checks
 		if appErr, ok := err.(*utils.AppError); ok {
-			lastErr = appErr
+			processedErr = appErr
 			retryable = appErr.Retryable
 		} else {
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "rate limit exceeded") {
-				lastErr = utils.NewAppError(utils.ErrorTypeRateLimit, "GitHub GraphQL API rate limit exceeded", err)
+				processedErr = utils.NewAppError(utils.ErrorTypeRateLimit, "GitHub GraphQL API rate limit exceeded", err)
+				retryable = true
 			} else if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "403") {
 				return utils.NewAppError(utils.ErrorTypeAuth, "GitHub GraphQL API authentication error", err).WithRetry(false)
 			} else {
 				// Default to retryable API error
-				lastErr = utils.NewAppError(utils.ErrorTypeAPI, "GitHub GraphQL API error", err)
+				processedErr = utils.NewAppError(utils.ErrorTypeAPI, "GitHub GraphQL API error", err)
+				retryable = true
 			}
 		}
+
+		// Store the current error for potential return
+		currentErr = processedErr
 
 		// If error is not retryable or this was our last attempt, return
 		if !retryable || attempt >= c.MaxRetries {
 			if attempt >= c.MaxRetries {
-				return fmt.Errorf("max retries reached: %w", lastErr)
+				return fmt.Errorf("max retries reached: %w", currentErr)
 			}
-			return lastErr
+			return currentErr
 		}
 
 		// Calculate backoff for next retry
 		backoff := c.InitialBackoff * (1 << attempt)
 		jitter := time.Duration(float64(backoff) * (0.5 + 0.5*float64(time.Now().Nanosecond())/float64(1e9)))
 
-		slog.Warn("retrying GraphQL query", "error", lastErr, "attempt", attempt, "backoff", backoff+jitter)
+		slog.Warn("retrying GraphQL query", "error", currentErr, "attempt", attempt, "backoff", backoff+jitter)
 
 		// Wait before retrying
 		select {
@@ -204,5 +214,5 @@ func (c *RetryableGraphQLClient) ExecuteGraphQLWithRetry(ctx context.Context, fn
 		}
 	}
 
-	return fmt.Errorf("max retries reached: %w", lastErr)
+	return fmt.Errorf("max retries reached: %w", currentErr)
 }
