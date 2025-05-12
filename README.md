@@ -6,11 +6,6 @@
 
 A GitHub CLI extension to help administrators of a GitHub Enterprise Cloud environment run reports against their enterprise.
 
-> [!NOTE]
-> This project has completed a major refactoring effort to improve code organization and maintainability. The current version uses the new architecture with full support for GitHub App authentication and a new configuration system. See [REFACTORING.md](REFACTORING.md) for details on the architectural changes and [MIGRATION.md](MIGRATION.md) for guidance on transitioning to the new architecture. Recent progress is documented in [CLEANUP-REPORT.md](CLEANUP-REPORT.md) and [NEXT-STEPS.md](NEXT-STEPS.md).
->
-> **New in version 2.0:** The configuration system has been completely redesigned with a Provider interface, making it easier to extend and test. The new system allows for both token-based and GitHub App authentication methods. See the examples directory for usage examples.
-
 ## 🚀 Quick Start
 
 ```bash
@@ -27,7 +22,7 @@ gh enterprise-reports --profile default
 
 ## Table of Contents
 - [🚀 Quick Start](#-quick-start)
-- [📋 Features](#-features)
+- [📋 Features](#-Features)
 - [⚙️ Prerequisites](#-prerequisites)
 - [🚀 Install manually](#-install-manually)
 - [🚀 Install with GitHub CLI](#-install-with-github-cli)

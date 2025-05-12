@@ -14,8 +14,7 @@ import (
 
 // MockError implements error for testing
 type MockError struct {
-	message   string
-	retryable bool
+	message string
 }
 
 func (e MockError) Error() string {

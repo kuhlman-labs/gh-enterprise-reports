@@ -47,7 +47,11 @@ func UsersReport(ctx context.Context, restClient *github.Client, graphQLClient *
 	if reportErr != nil {
 		return reportErr
 	}
-	defer reportWriter.Close()
+	defer func() {
+		if err := reportWriter.Close(); err != nil {
+			slog.Error("Failed to close report writer", "error", err)
+		}
+	}()
 
 	header := []string{
 		"ID",
