@@ -14,8 +14,16 @@ func TestSetupLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			t.Logf("Failed to close temp file: %v", err)
+		}
+	}()
 
 	// Set up logging with the temporary file
 	SetupLogging(tmpFile, slog.LevelDebug)
@@ -41,8 +49,16 @@ func TestMultiHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			t.Logf("Failed to close temp file: %v", err)
+		}
+	}()
 
 	// Create a multi handler
 	handler := NewMultiHandler(tmpFile, slog.LevelDebug)

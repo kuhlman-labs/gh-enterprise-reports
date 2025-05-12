@@ -55,7 +55,11 @@ func OrganizationsReport(ctx context.Context, graphQLClient *githubv4.Client, re
 	if err != nil {
 		return err
 	}
-	defer reportWriter.Close()
+	defer func() {
+		if err := reportWriter.Close(); err != nil {
+			slog.Error("Failed to close report writer", "error", err)
+		}
+	}()
 
 	header := []string{
 		"Organization",

@@ -129,7 +129,9 @@ func (m *ManagerProvider) InitializeFlags(rootCmd *cobra.Command) {
 	rootCmd.PersistentFlags().String("log-level", "info", "Log level (debug, info, warn, error, fatal)")
 
 	// Bind flags to Viper
-	m.v.BindPFlags(rootCmd.PersistentFlags())
+	if err := m.v.BindPFlags(rootCmd.PersistentFlags()); err != nil {
+		slog.Error("Failed to bind flags to viper", "error", err)
+	}
 }
 
 // LoadConfig loads the configuration from command line flags, environment variables, and config file.

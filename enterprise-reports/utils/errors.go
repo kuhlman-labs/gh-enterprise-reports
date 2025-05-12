@@ -47,11 +47,9 @@ func (e *AppError) Unwrap() error {
 
 // NewAppError creates a new application error with the given type, message, and cause.
 func NewAppError(errType ErrorType, message string, cause error) *AppError {
-	retryable := false
-	// Rate limit errors and certain API errors are retryable by default
-	if errType == ErrorTypeRateLimit || errType == ErrorTypeAPI {
-		retryable = true
-	}
+	// Determine if error is retryable based on type
+	retryable := errType == ErrorTypeRateLimit || errType == ErrorTypeAPI
+
 	return &AppError{
 		Type:      errType,
 		Message:   message,

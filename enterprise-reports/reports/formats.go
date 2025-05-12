@@ -250,7 +250,9 @@ func (w *ExcelReportWriter) Close() error {
 		if err != nil {
 			continue
 		}
-		w.file.SetColWidth(w.sheetName, colName, colName, 20) // Set reasonable default width
+		if err := w.file.SetColWidth(w.sheetName, colName, colName, 20); err != nil {
+			return fmt.Errorf("failed to set column width: %w", err)
+		}
 	}
 
 	if err := w.file.SaveAs(w.path); err != nil {
