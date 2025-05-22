@@ -1,0 +1,52 @@
+# Common configuration values
+enterprise: "your-enterprise-slug"      # Required: Your GitHub Enterprise slug
+auth-method: "token"                    # Authentication method: token or app
+token: "your-github-token-here"         # Required if auth-method is token
+base-url: "https://api.github.com/"     # Optional: GitHub API base URL (change for GitHub Enterprise Server)
+log-level: "info"                      # Log level: debug, info, warn, error, fatal, panic
+workers: 5                             # Number of concurrent workers (default: 5)
+output-format: "csv"                   # Output format: csv, json, or xlsx
+output-dir: "./reports"                # Directory to store report files
+
+# GitHub App authentication settings (if auth-method is "app")
+# app-id: 123456                       # GitHub App ID
+# app-private-key-file: "private-key.pem"  # Path to GitHub App private key file
+# app-installation-id: 987654          # GitHub App installation ID
+
+# Profile configurations
+profiles:
+  # Default profile - runs all reports
+  default:
+    organizations: true
+    repositories: true
+    teams: true
+    collaborators: true
+    users: true
+    
+  # Minimal profile - organization info only
+  minimal:
+    organizations: true
+    repositories: false
+    teams: false
+    collaborators: false
+    users: false
+    workers: 2       # Reduced worker count for minimal API usage
+    
+  # Security audit profile
+  security-audit:
+    organizations: true
+    repositories: true
+    teams: true
+    collaborators: true
+    users: false
+    output-format: "xlsx"
+    output-dir: "./security-reports"
+    
+  # User activity analysis
+  user-activity:
+    organizations: false
+    repositories: false
+    teams: false
+    collaborators: false
+    users: true
+    output-format: "json" 
