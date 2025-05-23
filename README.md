@@ -65,7 +65,7 @@ Before using this tool, ensure you have the following:
   - `repo` for repository details.
   - `audit_log` for user login events.
   - `user` for user details.
-  - `read:enterprise` for enterprise details.
+  - `admin:enterprise` for enterprise details.
   
 ---
 
