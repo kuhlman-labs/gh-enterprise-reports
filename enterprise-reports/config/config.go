@@ -16,6 +16,7 @@ type Config struct {
 	Teams                   bool
 	Collaborators           bool
 	Users                   bool
+	ActiveRepositories      bool
 	Workers                 int
 	AuthMethod              string
 	Token                   string
@@ -53,7 +54,7 @@ func (c *Config) Validate() error {
 	}
 
 	// If no report types are selected, report an error
-	if !c.Organizations && !c.Repositories && !c.Teams && !c.Collaborators && !c.Users {
+	if !c.Organizations && !c.Repositories && !c.Teams && !c.Collaborators && !c.Users && !c.ActiveRepositories {
 		errs = append(errs, fmt.Errorf("at least one report type must be selected"))
 	}
 

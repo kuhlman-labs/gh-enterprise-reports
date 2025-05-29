@@ -91,6 +91,11 @@ func (p *StandardProvider) ShouldRunUsersReport() bool {
 	return p.config.Users
 }
 
+// ShouldRunActiveRepositoriesReport returns whether to run the active repositories report.
+func (p *StandardProvider) ShouldRunActiveRepositoriesReport() bool {
+	return p.config.ActiveRepositories
+}
+
 // GetAuthMethod returns the authentication method.
 func (p *StandardProvider) GetAuthMethod() string {
 	return p.config.AuthMethod

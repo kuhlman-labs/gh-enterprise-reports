@@ -24,6 +24,7 @@ type Provider interface {
 	ShouldRunTeamsReport() bool
 	ShouldRunCollaboratorsReport() bool
 	ShouldRunUsersReport() bool
+	ShouldRunActiveRepositoriesReport() bool
 
 	// Authentication methods
 	GetAuthMethod() string

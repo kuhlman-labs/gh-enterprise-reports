@@ -72,6 +72,11 @@ func (m *MockProvider) ShouldRunUsersReport() bool {
 	return args.Bool(0)
 }
 
+func (m *MockProvider) ShouldRunActiveRepositoriesReport() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
 func (m *MockProvider) GetAuthMethod() string {
 	args := m.Called()
 	return args.String(0)
@@ -170,6 +175,7 @@ func TestReportExecutor_Execute(t *testing.T) {
 				mp.On("ShouldRunTeamsReport").Return(true)
 				mp.On("ShouldRunCollaboratorsReport").Return(true)
 				mp.On("ShouldRunUsersReport").Return(true)
+				mp.On("ShouldRunActiveRepositoriesReport").Return(false)
 
 				mp.On("CreateFilePath", "organizations").Return(filepath.Join(tmpDir, "test-enterprise_organizations.csv"))
 				mp.On("CreateFilePath", "repositories").Return(filepath.Join(tmpDir, "test-enterprise_repositories.csv"))
@@ -193,6 +199,7 @@ func TestReportExecutor_Execute(t *testing.T) {
 				mp.On("ShouldRunTeamsReport").Return(false)
 				mp.On("ShouldRunCollaboratorsReport").Return(false)
 				mp.On("ShouldRunUsersReport").Return(false)
+				mp.On("ShouldRunActiveRepositoriesReport").Return(false)
 
 				mp.On("CreateFilePath", "organizations").Return(filepath.Join(tmpDir, "test-enterprise_organizations.csv"))
 			},
@@ -212,6 +219,7 @@ func TestReportExecutor_Execute(t *testing.T) {
 				mp.On("ShouldRunTeamsReport").Return(false)
 				mp.On("ShouldRunCollaboratorsReport").Return(false)
 				mp.On("ShouldRunUsersReport").Return(false)
+				mp.On("ShouldRunActiveRepositoriesReport").Return(false)
 
 				mp.On("CreateFilePath", "repositories").Return(filepath.Join(tmpDir, "test-enterprise_repositories.csv"))
 			},

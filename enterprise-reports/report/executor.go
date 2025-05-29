@@ -144,6 +144,30 @@ func (r *UsersReportRunner) Name() string {
 	return "users"
 }
 
+// ActiveRepositoriesReportRunner implements the ReportRunner interface for active repositories report
+type ActiveRepositoriesReportRunner struct {
+	enterpriseSlug string
+}
+
+// NewActiveRepositoriesReportRunner is a constructor function for creating active repositories report runners
+var NewActiveRepositoriesReportRunner = func(enterpriseSlug string) ReportRunner {
+	return &ActiveRepositoriesReportRunner{
+		enterpriseSlug: enterpriseSlug,
+	}
+}
+
+// Run executes the active repositories report
+func (r *ActiveRepositoriesReportRunner) Run(ctx context.Context, restClient *github.Client,
+	graphQLClient *githubv4.Client, outputFilename string, workers int, cache *utils.SharedCache) error {
+
+	return reports.ActiveRepositoriesReport(ctx, restClient, graphQLClient, r.enterpriseSlug, outputFilename, workers, cache)
+}
+
+// Name returns the report name
+func (r *ActiveRepositoriesReportRunner) Name() string {
+	return "active-repositories"
+}
+
 // ReportExecutor coordinates the execution of multiple reports
 type ReportExecutor struct {
 	config config.Provider
@@ -193,6 +217,10 @@ func (re *ReportExecutor) Execute(ctx context.Context, restClient *github.Client
 
 	if re.config.ShouldRunUsersReport() {
 		runners = append(runners, NewUsersReportRunner(re.config.GetEnterpriseSlug()))
+	}
+
+	if re.config.ShouldRunActiveRepositoriesReport() {
+		runners = append(runners, NewActiveRepositoriesReportRunner(re.config.GetEnterpriseSlug()))
 	}
 
 	// Execute each selected report
