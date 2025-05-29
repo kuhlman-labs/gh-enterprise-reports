@@ -103,8 +103,9 @@ func ActiveRepositoriesReport(ctx context.Context, restClient *github.Client, gr
 		reposList = append(reposList, repos...)
 	}
 
-	// Filter repositories that have been pushed to in the last 90 days
-	cutoffDate := time.Now().AddDate(0, 0, -90)
+	// Filter repositories that have been pushed to in the last activeWindowDays
+	const activeWindowDays = 90
+	cutoffDate := time.Now().AddDate(0, 0, -activeWindowDays)
 	var activeRepos []*github.Repository
 
 	for _, repo := range reposList {
