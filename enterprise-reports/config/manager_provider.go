@@ -56,11 +56,12 @@ type ManagerProvider struct {
 	baseURL        string
 
 	// Report selection flags
-	runOrganizations bool
-	runRepositories  bool
-	runTeams         bool
-	runCollaborators bool
-	runUsers         bool
+	runOrganizations      bool
+	runRepositories       bool
+	runTeams              bool
+	runCollaborators      bool
+	runUsers              bool
+	runActiveRepositories bool
 
 	// Auth settings
 	authMethod      string
@@ -108,6 +109,7 @@ func (m *ManagerProvider) InitializeFlags(rootCmd *cobra.Command) {
 	rootCmd.PersistentFlags().Bool("teams", false, "Generate the teams report")
 	rootCmd.PersistentFlags().Bool("collaborators", false, "Generate the collaborators report")
 	rootCmd.PersistentFlags().Bool("users", false, "Generate the users report")
+	rootCmd.PersistentFlags().Bool("active-repositories", false, "Generate the active repositories report")
 
 	// Authentication flags
 	rootCmd.PersistentFlags().String("auth-method", "token", "Authentication method (token or app)")
@@ -202,6 +204,7 @@ func (m *ManagerProvider) LoadConfig() error {
 	m.runTeams = m.v.GetBool("teams")
 	m.runCollaborators = m.v.GetBool("collaborators")
 	m.runUsers = m.v.GetBool("users")
+	m.runActiveRepositories = m.v.GetBool("active-repositories")
 
 	m.authMethod = m.v.GetString("auth-method")
 	m.token = m.v.GetString("token")
@@ -272,6 +275,11 @@ func (m *ManagerProvider) ShouldRunUsersReport() bool {
 	return m.runUsers
 }
 
+// ShouldRunActiveRepositoriesReport returns whether to run the active repositories report.
+func (m *ManagerProvider) ShouldRunActiveRepositoriesReport() bool {
+	return m.runActiveRepositories
+}
+
 // GetAuthMethod returns the authentication method.
 func (m *ManagerProvider) GetAuthMethod() string {
 	return m.authMethod
@@ -337,8 +345,8 @@ func (m *ManagerProvider) Validate() error {
 
 	// at least one report
 	if !m.runOrganizations && !m.runRepositories && !m.runTeams &&
-		!m.runCollaborators && !m.runUsers {
-		errs = append(errs, fmt.Errorf("no report selected: please specify at least one of: organizations, repositories, teams, collaborators, users"))
+		!m.runCollaborators && !m.runUsers && !m.runActiveRepositories {
+		errs = append(errs, fmt.Errorf("no report selected: please specify at least one of: organizations, repositories, teams, collaborators, users, active-repositories"))
 	}
 
 	// Output format validation

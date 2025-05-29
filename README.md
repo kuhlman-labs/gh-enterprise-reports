@@ -52,6 +52,7 @@ gh enterprise-reports --profile default
 - **Teams Report**: Details teams, their members, and external groups.
 - **Collaborators Report**: Lists collaborators for repositories with their permissions.
 - **Users Report**: Identifies users, their activity, and dormant status.
+- **Active Repositories Report**: Identifies repositories with commits in the last 90 days and lists recent contributors.
 
 ---
 
@@ -162,6 +163,7 @@ gh enterprise-reports init --output custom-config.yml
 | `--teams`                  | Generate the teams report.                                                 |
 | `--collaborators`          | Generate the collaborators report.                                         |
 | `--users`                  | Generate the users report.                                                 |
+| `--active-repositories`    | Generate the active repositories report.                                   |
 | Configuration Flags ||
 | `--profile`               | Configuration profile to use (default: "default").                         |
 | `--config-file`           | Path to config file (default is ./config.yml).                            |
@@ -454,6 +456,23 @@ gh enterprise-reports --users --token <your-token> --enterprise <enterprise-slug
 ```csv
 ID,Login,Name,Email,Last Login(90 days),Dormant?
 1,user1,User One,user1@example.com,2023-01-01T00:00:00Z,false
+...
+```
+</details>
+
+<details>
+<summary>Active Repositories Report</summary>
+
+**Command:**
+```bash
+gh enterprise-reports --active-repositories --token <your-token> --enterprise <enterprise-slug>
+```
+
+**Sample Output:**
+```csv
+Owner,Repository,Pushed_At,Recent_Contributors
+org1,active-repo-1,2023-10-15T14:30:00Z,john.doe; jane.smith; alice.dev
+org2,busy-project,2023-10-20T09:15:00Z,bob.coder; charlie.dev
 ...
 ```
 </details>

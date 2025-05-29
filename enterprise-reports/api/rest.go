@@ -420,3 +420,41 @@ func FetchRepoCollaborators(ctx context.Context, restClient *github.Client, repo
 
 	return allCollaborators, nil
 }
+
+// FetchRepositoryCommits retrieves commits for a repository within a specified time range.
+// This is used to find repositories that have recent commit activity and identify contributors.
+func FetchRepositoryCommits(ctx context.Context, restClient *github.Client, owner, repo string, since time.Time) ([]*github.RepositoryCommit, error) {
+	slog.Debug("fetching repository commits", "owner", owner, "repo", repo, "since", since)
+
+	opts := &github.CommitsListOptions{
+		Since: since,
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+			Page:    1,
+		},
+	}
+
+	var allCommits []*github.RepositoryCommit
+
+	for {
+		commits, resp, err := restClient.Repositories.ListCommits(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch commits for %s/%s: %w", owner, repo, err)
+		}
+
+		slog.Debug("fetched commits page", "count", len(commits), "repo", fmt.Sprintf("%s/%s", owner, repo))
+		allCommits = append(allCommits, commits...)
+
+		// Check rate limit
+		handleRESTRateLimit(ctx, &resp.Rate)
+
+		// Check if there are more pages
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	slog.Debug("found commits", "count", len(allCommits), "repo", fmt.Sprintf("%s/%s", owner, repo))
+	return allCommits, nil
+}

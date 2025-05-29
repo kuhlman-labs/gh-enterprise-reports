@@ -22,6 +22,7 @@ profiles:
     teams: true
     collaborators: true
     users: true
+    active-repositories: true
     
   # Minimal profile - organization info only
   minimal:
@@ -30,6 +31,7 @@ profiles:
     teams: false
     collaborators: false
     users: false
+    active-repositories: false
     workers: 2       # Reduced worker count for minimal API usage
     
   # Security audit profile
@@ -39,6 +41,7 @@ profiles:
     teams: true
     collaborators: true
     users: false
+    active-repositories: true
     output-format: "xlsx"
     output-dir: "./security-reports"
     
@@ -49,4 +52,17 @@ profiles:
     teams: false
     collaborators: false
     users: true
-    output-format: "json" 
+    active-repositories: false
+    output-format: "json"
+    
+  # Repository activity analysis - focus on active repositories and contributors
+  repository-activity:
+    organizations: false
+    repositories: true
+    teams: false
+    collaborators: false
+    users: false
+    active-repositories: true
+    output-format: "xlsx"
+    output-dir: "./repository-reports"
+    workers: 3       # Conservative worker count due to commit fetching 
